@@ -11,6 +11,8 @@ frontend:
         - cd ignito_vese_admin && npm run build && cd ..
         - mkdir -p ignito_verse/dist/admin
         - cp -r ignito_vese_admin/dist/* ignito_verse/dist/admin/
+        - cp -rn ignito_vese_admin/dist/images ignito_verse/dist/ 2>/dev/null || true
+        - cp -n ignito_vese_admin/dist/*.png ignito_verse/dist/ 2>/dev/null || true
   artifacts:
     baseDirectory: ignito_verse/dist
     files:
@@ -19,4 +21,3 @@ frontend:
     paths:
       - ignito_verse/node_modules/**/*
       - ignito_vese_admin/node_modules/**/*
-
