@@ -223,19 +223,19 @@ export default function Navbar({
                   aria-expanded={profileDropdownOpen}
                 >
                   <img 
-                    src={ user.avatar ? user.avatar : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'} 
-                    alt={user.name} 
+                    src={user?.avatar || user?.profileImage || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'} 
+                    alt={user?.name || user?.studentName || user?.fullName || 'User'} 
                     className="navbar-user-avatar" 
                   />
-                  <span className="navbar-user-name">{user.name.split(' ')[0]}</span>
+                  <span className="navbar-user-name">{(user?.name || user?.studentName || user?.fullName || (user?.email ? user.email.split('@')[0] : 'User')).split(' ')[0]}</span>
                   <ChevronDown size={15} className={`profile-chevron ${profileDropdownOpen ? 'open' : ''}`} />
                 </button>
 
                 {profileDropdownOpen && (
                   <div className="profile-dropdown-menu">
                     <div className="dropdown-user-header">
-                      <p className="dropdown-name">{user.name}</p>
-                      <span className="dropdown-email">{user.email}</span>
+                      <p className="dropdown-name">{user?.name || user?.studentName || user?.fullName || (user?.email ? user.email.split('@')[0] : 'User')}</p>
+                      <span className="dropdown-email">{user?.email || ''}</span>
                     </div>
 
                     <div className="dropdown-divider" />

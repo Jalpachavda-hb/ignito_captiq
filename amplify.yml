@@ -1,0 +1,21 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd ignito_verse && npm install && cd ..
+        - cd ignito_vese_admin && npm install && cd ..
+    build:
+      commands:
+        - cd ignito_verse && npm run build && cd ..
+        - cd ignito_vese_admin && npm run build && cd ..
+        - mkdir -p ignito_verse/dist/admin
+        - cp -r ignito_vese_admin/dist/* ignito_verse/dist/admin/
+  artifacts:
+    baseDirectory: ignito_verse/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - ignito_verse/node_modules/**/*
+      - ignito_vese_admin/node_modules/**/*
