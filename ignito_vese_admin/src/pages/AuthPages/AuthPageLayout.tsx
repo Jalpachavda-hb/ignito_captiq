@@ -12,13 +12,13 @@ export default function AuthLayout({
         {/* Left Side: Show Image with Brand Copy, Badges & Handwriting */}
         <div
           className="w-full lg:w-[53%] xl:w-[55%] bg-cover bg-center bg-no-repeat relative p-7 sm:p-10 lg:p-10 xl:p-12 flex flex-col justify-between overflow-hidden"
-          style={{ backgroundImage: `url('${import.meta.env.BASE_URL}login_page.png')` }}
+          style={{ backgroundImage: "url('/login_page.png')" }}
         >
           {/* Logo */}
           <div className="relative z-10 mb-4">
             <a href="/" className="inline-block">
               <img
-                src={`${import.meta.env.BASE_URL}newlg.png`}
+                src="/newlg.png"
                 alt="IgnitoVerse Online Learning Platform"
                 className="h-9 sm:h-10 w-auto object-contain"
               />

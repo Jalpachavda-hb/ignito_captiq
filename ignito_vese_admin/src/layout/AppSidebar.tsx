@@ -317,13 +317,13 @@ const AppSidebar: React.FC = () => {
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
             <img
-              src={`${import.meta.env.BASE_URL}newlg.png`}
+              src="/newlg.png"
               alt="Ignitoverse Logo"
               className="h-10 w-auto max-w-[190px] object-contain"
             />
           ) : (
             <img
-              src={`${import.meta.env.BASE_URL}fav.png`}
+              src="/fav.png"
               alt="Ignitoverse Icon"
               className="h-8 w-8 object-contain"
             />
