@@ -20,9 +20,9 @@ export default function NotFound() {
           </h1>
 
           <div className="max-w-[260px] sm:max-w-[320px] mx-auto my-4">
-            <img src="/images/error/404.svg" alt="404 Not Found" className="dark:hidden w-full h-auto" />
+            <img src={`${import.meta.env.BASE_URL}images/error/404.svg" alt="404 Not Found" className="dark:hidden w-full h-auto" />
             <img
-              src="/images/error/404-dark.svg"
+              src={`${import.meta.env.BASE_URL}images/error/404-dark.svg"
               alt="404 Not Found"
               className="hidden dark:block w-full h-auto"
             />

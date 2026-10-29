@@ -83,7 +83,7 @@ const AppHeader: React.FC = () => {
 
           <Link to="/" className="lg:hidden">
             <img
-              src="/newlg.png"
+              src={`${import.meta.env.BASE_URL}newlg.png`}
               alt="Ignitoverse Logo"
               className="h-8 w-auto max-w-[150px] object-contain"
             />
