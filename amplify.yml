@@ -19,3 +19,4 @@ frontend:
     paths:
       - ignito_verse/node_modules/**/*
       - ignito_vese_admin/node_modules/**/*
+
