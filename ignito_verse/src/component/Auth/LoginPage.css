@@ -1,0 +1,838 @@
+/* ==========================================================================
+   IGNITOCAPTIQ DESK HERO LOGIN PAGE - SENIOR UI/UX EXECUTIVE OVERHAUL
+   Theme: #052765 (Deep Navy), #7f489f (Brand Purple), #af4bb8 (Vivid Magenta), #2563eb (Accent Blue)
+   Background: Interactive WebGL Particle Constellation + Premium Desk Card
+   ========================================================================== */
+
+.captiq-desk-viewport {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(ellipse at 50% 15%, rgba(127, 72, 159, 0.09) 0%, rgba(37, 99, 235, 0.05) 45%, #f8fafc 100%);
+  padding: clamp(24px, 3.5vw, 44px) clamp(16px, 2.5vw, 32px);
+  position: relative;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  font-family: var(--font-family, 'Hind Vadodara', sans-serif);
+}
+
+/* Background Interactive Particle Constellation */
+.captiq-dot-bg-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Top Navigation Bar: Back to Home */
+.captiq-desk-top-bar {
+  width: 100%;
+  max-width: 1220px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 10;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+.captiq-back-home-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 217, 243, 0.95);
+  border-radius: 9999px;
+  color: #052765;
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px 18px;
+  box-shadow: 0 4px 14px rgba(5, 39, 101, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.captiq-back-home-pill:hover {
+  background: #ffffff;
+  color: #3a2c8c;
+  border-color: rgba(175, 75, 184, 0.5);
+  box-shadow: 0 8px 24px rgba(58, 44, 140, 0.12);
+  transform: translateX(-3px);
+}
+
+.captiq-back-home-pill:hover .back-arrow-icon {
+  transform: translateX(-2px);
+}
+
+.back-arrow-icon {
+  transition: transform 0.25s ease;
+}
+
+/* Master Login Card */
+.captiq-desk-card {
+  width: 100%;
+  max-width: 1220px;
+  min-height: 600px;
+  background-color: #ffffff;
+  background-image: url('../../assets/home/loginbg.png');
+  background-repeat: no-repeat;
+  background-position: 40% center;
+  background-size: cover;
+  border-radius: 36px;
+  box-shadow: 0 30px 80px -20px rgba(5, 39, 101, 0.16), 0 12px 30px -8px rgba(127, 72, 159, 0.10), 0 0 0 1px rgba(226, 217, 243, 0.95);
+  display: flex;
+  justify-content: space-between;
+  padding: 0;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 5;
+  overflow: hidden;
+  transition: all 0.35s ease;
+}
+
+.captiq-desk-card.card-auth-success {
+  box-shadow: 0 35px 95px rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+/* ==========================================================================
+   LEFT COLUMN: Logo, People. Skills. Real Impact., 3 Features, Motto
+   ========================================================================== */
+.captiq-desk-col-left {
+  width: 330px;
+  padding: 42px 0 42px 48px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  z-index: 6;
+  text-align: left;
+}
+
+.captiq-desk-brand {
+  margin-bottom: 20px;
+}
+
+.brand-logo-img {
+  height: 48px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Headline */
+.captiq-desk-title-block {
+  margin-bottom: 18px;
+}
+
+.captiq-people-title {
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1.16;
+  color: #052765;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.02em;
+  display: flex;
+  flex-direction: column;
+}
+
+.title-first-line {
+  color: #052765;
+  white-space: nowrap;
+}
+
+.title-real-impact {
+  background: linear-gradient(135deg, #7f489f 0%, #af4bb8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.captiq-people-desc {
+  font-size: 0.86rem;
+  line-height: 1.54;
+  color: #475569;
+  margin: 0;
+  max-width: 300px;
+  font-weight: 500;
+}
+
+/* Feature Stack: Polished Micro-Cards */
+.captiq-desk-features {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+
+.feature-pill-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 9px 13px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 217, 243, 0.7);
+  box-shadow: 0 3px 12px rgba(5, 39, 101, 0.03);
+  transition: all 0.25s ease;
+}
+
+.feature-pill-item:hover {
+  transform: translateX(4px);
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(175, 75, 184, 0.35);
+  box-shadow: 0 6px 18px rgba(58, 44, 140, 0.08);
+}
+
+.feature-pill-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease;
+}
+
+.feature-pill-icon.icon-pink {
+  background: #faf0fc;
+  color: #af4bb8;
+  border: 1px solid rgba(175, 75, 184, 0.25);
+}
+
+.feature-pill-icon.icon-purple {
+  background: #f4f2fc;
+  color: #3a2c8c;
+  border: 1px solid rgba(58, 44, 140, 0.25);
+}
+
+.feature-pill-icon.icon-blue {
+  background: #eff6ff;
+  color: #052765;
+  border: 1px solid rgba(5, 39, 101, 0.25);
+}
+
+.feature-pill-info h4 {
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #052765;
+  margin: 0 0 2px 0;
+}
+
+.feature-pill-info p {
+  font-size: 0.76rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Handwritten Script Motto */
+.captiq-desk-motto {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.handwritten-script {
+  font-family: 'Caveat', 'Segoe Script', 'Dancing Script', cursive, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: #052765;
+  line-height: 1.15;
+  transform: rotate(-3deg);
+  display: inline-block;
+  letter-spacing: 0.02em;
+}
+
+.handwritten-line {
+  width: 36px;
+  height: 3px;
+  background: linear-gradient(90deg, #af4bb8 0%, #3a2c8c 100%);
+  border-radius: 2px;
+  margin-top: 5px;
+}
+
+/* ==========================================================================
+   CENTER SPACER
+   ========================================================================== */
+.captiq-desk-center-spacer {
+  flex: 1;
+  min-width: 30px;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   RIGHT COLUMN: Welcome Back Form Panel (Executive Styled Panel)
+   ========================================================================== */
+.captiq-desk-col-right {
+  width: 440px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  z-index: 6;
+  text-align: left;
+  background: #ffffff;
+  padding: 42px 44px;
+  box-sizing: border-box;
+  border-top-right-radius: 36px;
+  border-bottom-right-radius: 36px;
+  border-top-left-radius: 20px;
+  border-bottom-left-radius: 20px;
+  box-shadow: -15px 0 35px rgba(5, 39, 101, 0.04);
+}
+
+.captiq-mobile-brand-bar {
+  display: none;
+}
+
+.captiq-mobile-trust-strip {
+  display: none;
+}
+
+/* Sleek Badge Pill */
+.captiq-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(127, 72, 159, 0.08);
+  border: 1px solid rgba(127, 72, 159, 0.22);
+  color: #7f489f;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  align-self: flex-start;
+}
+
+.badge-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+  display: inline-block;
+}
+
+.captiq-desk-form-heading {
+  margin-bottom: 20px;
+}
+
+.captiq-right-title {
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #052765;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+.title-back-accent {
+  background: linear-gradient(135deg, #7f489f 0%, #af4bb8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.captiq-right-sub {
+  font-size: 0.90rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Feedback Banners */
+.captiq-banner-msg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 15px;
+  border-radius: 11px;
+  font-family: var(--font-body, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 10px;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+  animation: captiqBannerFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes captiqBannerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.captiq-banner-msg .banner-icon {
+  flex-shrink: 0;
+}
+
+.captiq-banner-msg .banner-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* Success Banner */
+.captiq-banner-msg.banner-success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.08);
+}
+
+.captiq-banner-msg.banner-success .banner-icon {
+  color: #16a34a;
+}
+
+/* Error Banner */
+.captiq-banner-msg.banner-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.08);
+}
+
+.captiq-banner-msg.banner-error .banner-icon {
+  color: #dc2626;
+}
+
+/* Form */
+.captiq-right-form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Apple/Stripe-Style Segmented Switcher */
+.method-switcher-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.segmented-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  border-radius: 9px;
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.segmented-tab-btn:hover:not(.active) {
+  color: #052765;
+}
+
+.segmented-tab-btn.active {
+  background: #ffffff;
+  color: #3a2c8c;
+  box-shadow: 0 2px 8px rgba(5, 39, 101, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Field Box */
+.captiq-field-box {
+  margin-bottom: 18px;
+}
+
+.captiq-form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #052765;
+  margin-bottom: 6px;
+}
+
+.captiq-styled-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  transition: all 0.22s ease;
+  box-sizing: border-box;
+}
+
+.captiq-styled-input-wrap.has-focus {
+  border-color: #af4bb8;
+  box-shadow: 0 0 0 3.5px rgba(175, 75, 184, 0.16);
+}
+
+.field-icon-lead {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.captiq-styled-input-wrap.has-focus .field-icon-lead {
+  color: #af4bb8;
+}
+
+.captiq-styled-input {
+  width: 100%;
+  height: 48px;
+  padding: 10px 14px 10px 44px;
+  border: none;
+  background: transparent;
+  font-size: 0.94rem;
+  font-family: inherit;
+  font-weight: 600;
+  color: #052765;
+  outline: none;
+  box-sizing: border-box;
+  border-radius: 11px;
+}
+
+.captiq-styled-input::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.captiq-styled-input:-webkit-autofill,
+.captiq-styled-input:-webkit-autofill:hover, 
+.captiq-styled-input:-webkit-autofill:focus, 
+.captiq-styled-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #052765 !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Primary Action Button (Send OTP & Verify OTP) */
+.captiq-primary-submit-btn {
+  width: 100%;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #3a2c8c 0%, #7f489f 50%, #af4bb8 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 24px rgba(58, 44, 140, 0.32);
+}
+
+.captiq-primary-submit-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2e2175 0%, #6d398d 50%, #9937a2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(175, 75, 184, 0.42);
+}
+
+.captiq-primary-submit-btn:hover:not(:disabled) .btn-arrow-motion {
+  transform: translateX(3px);
+}
+
+.btn-arrow-motion {
+  transition: transform 0.22s ease;
+}
+
+.captiq-primary-submit-btn:disabled {
+  background: linear-gradient(135deg, rgba(58, 44, 140, 0.35) 0%, rgba(175, 75, 184, 0.35) 100%);
+  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Trust Banner underneath button (Balances Vertical Space) */
+.captiq-form-trust-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(226, 232, 240, 0.85);
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.trust-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.trust-icon {
+  color: #10b981;
+}
+
+.trust-dot {
+  color: #cbd5e1;
+  font-size: 0.7rem;
+}
+
+/* Terms note */
+.captiq-form-terms-note {
+  margin: 14px 0 0 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.captiq-inline-link-btn {
+  background: transparent;
+  border: none;
+  color: #7f489f;
+  font-size: inherit;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s ease;
+}
+
+.captiq-inline-link-btn:hover {
+  color: #3a2c8c;
+}
+
+/* ==========================================================================
+   EXACT 4-BOX DEDICATED OTP INPUT ROW (SMART FOCUS & DYNAMIC GLOW)
+   ========================================================================== */
+.captiq-otp-4box-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 16px 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.captiq-otp-digit-box {
+  flex: 1;
+  height: 60px;
+  max-width: 74px;
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #052765;
+  text-align: center;
+  outline: none;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  caret-color: #af4bb8;
+  padding: 0;
+}
+
+.captiq-otp-digit-box:hover:not(:disabled) {
+  border-color: #cbd5e1;
+}
+
+.captiq-otp-digit-box.is-filled {
+  border-color: #af4bb8;
+  background: linear-gradient(135deg, #fdf7fe 0%, #f6f0fc 100%);
+  color: #052765;
+  box-shadow: 0 2px 8px rgba(175, 75, 184, 0.12);
+}
+
+.captiq-otp-digit-box:focus,
+.captiq-otp-digit-box.is-focused {
+  border-color: #af4bb8;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(175, 75, 184, 0.22), 0 6px 18px rgba(58, 44, 140, 0.16);
+  transform: translateY(-2px);
+}
+
+.captiq-otp-digit-box.is-filled:focus {
+  background: linear-gradient(135deg, #fdf8fe 0%, #f6f1fc 100%);
+  box-shadow: 0 0 0 4px rgba(175, 75, 184, 0.25), 0 8px 20px rgba(175, 75, 184, 0.2);
+}
+
+/* Verify OTP Sub-elements */
+.verify-top-subrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.verify-top-subrow .captiq-form-label {
+  margin-bottom: 0;
+}
+
+.captiq-text-link {
+  background: transparent;
+  border: none;
+  color: #3a2c8c;
+  font-family: var(--font-heading, 'Hind Vadodara', sans-serif);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.captiq-text-link:hover {
+  color: #af4bb8;
+  text-decoration: underline;
+}
+
+.resend-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 18px 0;
+}
+
+/* ==========================================================================
+   OUTSIDE CARD: Bottom Right Slogan
+   ========================================================================== */
+.captiq-bottom-right-slogan {
+  position: absolute;
+  right: clamp(24px, 4vw, 56px);
+  bottom: clamp(16px, 3vh, 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.slogan-pink-bar {
+  width: 24px;
+  height: 3px;
+  background: linear-gradient(90deg, #af4bb8 0%, #3a2c8c 100%);
+  border-radius: 2px;
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN ADAPTATIONS
+   ========================================================================== */
+@media (max-width: 1200px) {
+  .captiq-desk-card {
+    max-width: 1040px;
+    min-height: 560px;
+  }
+  .captiq-desk-col-left {
+    width: 300px;
+    padding: 36px 0 36px 36px;
+  }
+  .captiq-desk-col-right {
+    width: 410px;
+    padding: 36px 36px;
+  }
+  .captiq-people-title {
+    font-size: 1.95rem;
+  }
+}
+
+@media (max-width: 992px) {
+  .captiq-desk-card {
+    flex-direction: column;
+    max-width: 580px;
+    min-height: auto;
+    background-image: none !important;
+    background-color: #ffffff;
+    border-radius: 28px;
+  }
+
+  .captiq-desk-col-left {
+    width: 100%;
+    padding: 36px 32px 24px 32px;
+    border-bottom: 1px solid rgba(226, 217, 243, 0.7);
+  }
+
+  .captiq-desk-center-spacer {
+    display: none;
+  }
+
+  .captiq-desk-col-right {
+    width: 100%;
+    border-radius: 0 0 28px 28px;
+    box-shadow: none;
+    padding: 32px 32px 36px 32px;
+  }
+}
+
+@media (max-width: 540px) {
+  .captiq-desk-viewport {
+    padding: 16px 12px;
+  }
+  .captiq-desk-col-left {
+    padding: 24px 20px 20px 20px;
+  }
+  .captiq-desk-col-right {
+    padding: 24px 20px 28px 20px;
+  }
+  .captiq-people-title {
+    font-size: 1.7rem;
+  }
+  .captiq-right-title {
+    font-size: 1.8rem;
+  }
+  .captiq-otp-digit-box {
+    height: 52px;
+    font-size: 1.4rem;
+  }
+}
+

@@ -1,0 +1,1174 @@
+// ignitoverse: Student Profile Calendar & Events Component
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Calendar as CalendarIcon, Video, Headphones, Search,
+  ChevronLeft, ChevronRight, Filter, RotateCcw,
+  ExternalLink, X, Clock, BookOpen, CheckCircle, Info, RefreshCw,
+  Download, PlayCircle, FileVideo, Film
+} from 'lucide-react';
+import {
+  getStudentCalendarEvents,
+  calculateEventMetrics
+} from '../../../services/calendarService';
+import {
+  getMicrocredentialLiveMeetingsByCourse,
+  downloadEventIcs
+} from '../../../services/microcredentialService';
+import './StudentCalendar.css';
+import { formatDate, formatDateTime } from '../../../utils/dateFormatter';
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const WEEK_DAYS = [
+  { full: 'Sunday', short: 'Sun' },
+  { full: 'Monday', short: 'Mon' },
+  { full: 'Tuesday', short: 'Tue' },
+  { full: 'Wednesday', short: 'Wed' },
+  { full: 'Thursday', short: 'Thu' },
+  { full: 'Friday', short: 'Fri' },
+  { full: 'Saturday', short: 'Sat' }
+];
+
+export default function StudentCalendar({
+  user = null,
+  enrolledCourses = null,
+  onEventsCountChange = () => { }
+}) {
+  // Main Tab: 'calendar' (Calendar View) | 'recordings' (Session Recordings & Downloads)
+  const [mainTab, setMainTab] = useState('calendar');
+
+  // Active view date state (Default to September 2026 or current date)
+  const [currentYear, setCurrentYear] = useState(2026);
+  const [currentMonth, setCurrentMonth] = useState(8); // 8 = September (0-indexed)
+  const [filterYear, setFilterYear] = useState(2026);
+  const [filterMonth, setFilterMonth] = useState(8);
+  const [filterEventType, setFilterEventType] = useState('ALL');
+
+  // Calendar Sub-view: 'month' | 'week' | 'day' | 'list'
+  const [calViewMode, setCalViewMode] = useState('month');
+
+  // Search query for events
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Pagination for List sub-view
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
+
+  // Modal State for Event Description
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  // Dynamic Events list & loading states
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+
+  // Dynamic Live Meetings list & loading states (from GetMicrocredentialLiveMeetingsByCourse)
+  const [liveMeetingsList, setLiveMeetingsList] = useState([]);
+  const [loadingLiveMeetings, setLoadingLiveMeetings] = useState(false);
+  const [liveMeetingSearchQuery, setLiveMeetingSearchQuery] = useState('');
+  const [liveMeetingSourceFilter, setLiveMeetingSourceFilter] = useState('ALL');
+
+  // State for .ics calendar export download
+  const [downloadingIcsId, setDownloadingIcsId] = useState(null);
+
+  // Helper to determine if an event is already over / completed
+  const isEventOver = (ev) => {
+    if (!ev) return false;
+    if (ev.liveStatus === 'Ended' || ev.liveStatus === 'Completed') return true;
+    const targetDate = ev.endDate || ev.startDate;
+    if (!targetDate) return false;
+    const dateObj = new Date(targetDate);
+    return !isNaN(dateObj.getTime()) && dateObj < new Date();
+  };
+
+  const handleDownloadEventIcs = async (ev) => {
+    if (!ev) return;
+    const eventId = ev.eventId || ev.id || ev.meetingId;
+    if (!eventId) return;
+
+    try {
+      setDownloadingIcsId(eventId);
+      await downloadEventIcs(eventId, ev);
+    } catch (err) {
+      console.error('Failed to download calendar event ICS:', err);
+    } finally {
+      setDownloadingIcsId(null);
+    }
+  };
+
+  // Tab switch handler: when switching to 'liveEvents', refresh live meetings from GetMicrocredentialLiveMeetingsByCourse
+  const handleTabSwitch = async (tab) => {
+    setMainTab(tab);
+    if (tab === 'liveEvents') {
+      const studentId = user?.studentId || user?.id || 0;
+      setLoadingLiveMeetings(true);
+      try {
+        const liveRes = await getMicrocredentialLiveMeetingsByCourse(0, studentId);
+        if (liveRes?.success && Array.isArray(liveRes.liveMeetings)) {
+          setLiveMeetingsList(liveRes.liveMeetings);
+        }
+      } catch (err) {
+        console.error('Error fetching live meetings on click:', err);
+      } finally {
+        setLoadingLiveMeetings(false);
+      }
+    }
+  };
+
+  // Fetch dynamic calendar events (GetStudentMicrocredentialEvents) and live meetings (GetMicrocredentialLiveMeetingsByCourse)
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchCalendarData() {
+      setLoadingEvents(true);
+      setLoadingLiveMeetings(true);
+      try {
+        const studentId = user?.studentId || user?.id || 0;
+        
+        // Fetch events & live meetings concurrently without calling recordings API
+        const [eventsData, liveMeetingsData] = await Promise.all([
+          getStudentCalendarEvents(studentId).catch(() => []),
+          getMicrocredentialLiveMeetingsByCourse(0, studentId).catch(() => ({ liveMeetings: [] }))
+        ]);
+
+        if (isMounted) {
+          setEvents(eventsData || []);
+          if (typeof onEventsCountChange === 'function') {
+            onEventsCountChange(eventsData?.length || 0);
+          }
+
+          if (liveMeetingsData?.success && Array.isArray(liveMeetingsData.liveMeetings)) {
+            setLiveMeetingsList(liveMeetingsData.liveMeetings);
+          } else {
+            setLiveMeetingsList([]);
+          }
+
+          if (eventsData && eventsData.length > 0) {
+            const firstWithDate = eventsData.find(e => e.startDate);
+            if (firstWithDate) {
+              const d = new Date(firstWithDate.startDate);
+              if (!isNaN(d.getTime())) {
+                setCurrentMonth(d.getMonth());
+                setCurrentYear(d.getFullYear());
+                setFilterMonth(d.getMonth());
+                setFilterYear(d.getFullYear());
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading calendar events and live meetings:', err);
+      } finally {
+        if (isMounted) {
+          setLoadingEvents(false);
+          setLoadingLiveMeetings(false);
+        }
+      }
+    }
+    fetchCalendarData();
+  }, [user, enrolledCourses]);
+
+  // Filtered Events for Calendar & List
+  const filteredEvents = useMemo(() => {
+    return events.filter(ev => {
+      // 1. Event Type filter
+      if (filterEventType !== 'ALL') {
+        const type = (ev.sourceType || '').toLowerCase();
+        if (filterEventType === 'zoom' && !type.includes('zoom')) return false;
+        if (filterEventType === 'google_meet' && !type.includes('meet')) return false;
+        if (filterEventType === 'google_calendar' && !type.includes('calendar')) return false;
+      }
+      // 2. Search Query filter
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (ev.title || '').toLowerCase().includes(q);
+        const matchLabel = (ev.sourceLabel || '').toLowerCase().includes(q);
+        const matchProg = (ev.programName || '').toLowerCase().includes(q);
+        const matchSub = (ev.programSub || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchLabel && !matchProg && !matchSub) return false;
+      }
+      return true;
+    });
+  }, [events, filterEventType, searchQuery]);
+
+  // Filtered Live Meetings List
+  const filteredLiveMeetings = useMemo(() => {
+    return liveMeetingsList.filter(rec => {
+      const matchSource = liveMeetingSourceFilter === 'ALL' || (rec.sourceType || '').toUpperCase() === liveMeetingSourceFilter;
+      const q = liveMeetingSearchQuery.toLowerCase();
+      const matchQuery = !q ||
+        (rec.title || '').toLowerCase().includes(q) ||
+        (rec.microcredentialCourseName && rec.microcredentialCourseName.toLowerCase().includes(q)) ||
+        (rec.description && rec.description.toLowerCase().includes(q));
+      return matchSource && matchQuery;
+    });
+  }, [liveMeetingsList, liveMeetingSearchQuery, liveMeetingSourceFilter]);
+
+  // Metric stats
+  const metrics = useMemo(() => calculateEventMetrics(events), [events]);
+
+  // Handle Month / Year Filter submit
+  const handleApplyFilter = () => {
+    setCurrentMonth(Number(filterMonth));
+    setCurrentYear(Number(filterYear));
+  };
+
+  const handleClearFilter = () => {
+    setFilterMonth(8);
+    setFilterYear(2026);
+    setFilterEventType('ALL');
+    setSearchQuery('');
+    setCurrentMonth(8);
+    setCurrentYear(2026);
+  };
+
+  // Navigations (< Today >)
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(prev => prev - 1);
+      setFilterMonth(11);
+      setFilterYear(prev => prev - 1);
+    } else {
+      setCurrentMonth(prev => prev - 1);
+      setFilterMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(prev => prev + 1);
+      setFilterMonth(0);
+      setFilterYear(prev => prev + 1);
+    } else {
+      setCurrentMonth(prev => prev + 1);
+      setFilterMonth(prev => prev + 1);
+    }
+  };
+
+  const handleGoToday = () => {
+    setCurrentMonth(8);
+    setCurrentYear(2026);
+    setFilterMonth(8);
+    setFilterYear(2026);
+  };
+
+  // Paginated Events for List view mode
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
+  const paginatedEvents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredEvents.slice(start, start + pageSize);
+  }, [filteredEvents, currentPage, pageSize]);
+
+  // Calendar Grid Days Calculation
+  const calendarGridCells = useMemo(() => {
+    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+
+    const cells = [];
+
+    // Leading days from previous month
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      cells.push({
+        dayNumber: dayNum,
+        isOtherMonth: true,
+        monthOffset: -1,
+        dateStr: `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+      });
+    }
+
+    // Days in current month
+    for (let dayNum = 1; dayNum <= daysInCurrentMonth; dayNum++) {
+      const monthStr = String(currentMonth + 1).padStart(2, '0');
+      const dayStr = String(dayNum).padStart(2, '0');
+      const dateStr = `${currentYear}-${monthStr}-${dayStr}`;
+
+      // Events for this day
+      const dayEvents = filteredEvents.filter(ev => ev.startDate.startsWith(dateStr));
+
+      cells.push({
+        dayNumber: dayNum,
+        isOtherMonth: false,
+        isToday: dayNum === 15 && currentMonth === 8 && currentYear === 2026,
+        monthOffset: 0,
+        dateStr,
+        events: dayEvents
+      });
+    }
+
+    // Trailing days to fill 35 or 42 grid
+    const totalFilled = cells.length;
+    const remaining = totalFilled <= 35 ? 35 - totalFilled : 42 - totalFilled;
+    for (let dayNum = 1; dayNum <= remaining; dayNum++) {
+      cells.push({
+        dayNumber: dayNum,
+        isOtherMonth: true,
+        monthOffset: 1,
+        dateStr: `${currentYear}-${String(currentMonth + 2).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+      });
+    }
+
+    return cells;
+  }, [currentYear, currentMonth, filteredEvents]);
+
+  // Helper for source icon
+  const renderSourceIcon = (sourceType) => {
+    if (sourceType === 'google_calendar') {
+      return (
+        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#1e293b' }}>
+          G
+        </span>
+      );
+    }
+    if (sourceType === 'google_meet') {
+      return <Video size={14} color="#1e293b" />;
+    }
+    return <Video size={14} color="#1e293b" />;
+  };
+
+  return (
+    <div className="student-calendar-container">
+      {/* ------------------------------------------------------------------
+          1. TOP TAB SWITCHER (Consolidated: Calendar View & Recordings)
+          ------------------------------------------------------------------ */}
+      <div className="calendar-top-tabs-bar">
+        <button
+          type="button"
+          className={`calendar-tab-pill-btn ${mainTab === 'calendar' ? 'active' : ''}`}
+          onClick={() => setMainTab('calendar')}
+        >
+          <CalendarIcon size={15} />
+          <span>Calendar View</span>
+        </button>
+
+        <button
+          type="button"
+          className={`calendar-tab-pill-btn ${mainTab === 'liveEvents' ? 'active' : ''}`}
+          onClick={() => handleTabSwitch('liveEvents')}
+        >
+          <Video size={15} />
+          <span>Show Live Event</span>
+          {liveMeetingsList.length > 0 && (
+            <span style={{
+              fontSize: '0.74rem',
+              fontWeight: 800,
+              padding: '2px 8px',
+              borderRadius: '999px',
+              background: mainTab === 'liveEvents' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+              color: mainTab === 'liveEvents' ? '#ffffff' : '#00385E'
+            }}>
+              {liveMeetingsList.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ------------------------------------------------------------------
+          2. METRIC STAT CARDS (4-Column Row)
+          ------------------------------------------------------------------ */}
+      <div className="calendar-stats-grid">
+        {/* Card 1: Google Events */}
+        <div className="calendar-stat-card">
+          <div className="stat-icon-box google-icon">
+            <span>G</span>
+          </div>
+          <div className="stat-content">
+            <span className="stat-number">{metrics.googleEvents}</span>
+            <span className="stat-label">Google Events</span>
+          </div>
+        </div>
+
+        {/* Card 2: Zoom Meetings */}
+        <div className="calendar-stat-card">
+          <div className="stat-icon-box">
+            <Video size={22} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-number">{metrics.zoomMeetings}</span>
+            <span className="stat-label">Zoom Meetings</span>
+          </div>
+        </div>
+
+        {/* Card 3: Google Meets */}
+        <div className="calendar-stat-card">
+          <div className="stat-icon-box">
+            <Headphones size={22} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-number">{metrics.googleMeets}</span>
+            <span className="stat-label">Google Meets</span>
+          </div>
+        </div>
+
+        {/* Card 4: Total Events */}
+        <div className="calendar-stat-card">
+          <div className="stat-icon-box">
+            <CalendarIcon size={22} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-number">{metrics.totalEvents}</span>
+            <span className="stat-label">Total Events</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------
+          3A. TAB CONTENT: CALENDAR VIEW
+          ------------------------------------------------------------------ */}
+      {mainTab === 'calendar' && (
+        <div className="calendar-view-card">
+          {/* Enhanced Filters Row with Event Type & Search */}
+          <div className="calendar-filters-row">
+            <div className="filter-field-group">
+              <label className="filter-field-label">MONTH</label>
+              <select
+                className="filter-select"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(Number(e.target.value))}
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="filter-field-group">
+              <label className="filter-field-label">YEAR</label>
+              <input
+                type="number"
+                className="filter-input"
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+              />
+            </div>
+
+            <div className="filter-field-group">
+              <label className="filter-field-label">EVENT TYPE</label>
+              <select
+                className="filter-select"
+                value={filterEventType}
+                onChange={(e) => setFilterEventType(e.target.value)}
+              >
+                <option value="ALL">All Event Types</option>
+                <option value="google_meet">Google Meets</option>
+                <option value="zoom">Zoom Meetings</option>
+                <option value="google_calendar">Google Calendar</option>
+              </select>
+            </div>
+
+            <div className="filter-field-group" style={{ flex: 1, minWidth: '180px' }}>
+              <label className="filter-field-label">SEARCH</label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="filter-input"
+                  placeholder="Search meeting or topic..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ width: '100%', paddingRight: '28px' }}
+                />
+                <Search size={14} style={{ position: 'absolute', right: '10px', color: '#94a3b8' }} />
+              </div>
+            </div>
+
+            <div className="filter-btn-group">
+              <button
+                type="button"
+                className="btn-calendar-filter"
+                onClick={handleApplyFilter}
+              >
+                <Filter size={15} />
+                <span>Filter Events</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn-calendar-clear"
+                onClick={handleClearFilter}
+              >
+                <RotateCcw size={15} />
+                <span>Clear</span>
+              </button>
+            </div>
+          </div>
+
+
+
+          {/* Navigation & Period Control */}
+          <div className="calendar-nav-toolbar">
+            <div className="cal-nav-left">
+              <button
+                type="button"
+                className="btn-cal-arrow"
+                onClick={handlePrevMonth}
+                aria-label="Previous Month"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                className="btn-cal-today"
+                onClick={handleGoToday}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className="btn-cal-arrow"
+                onClick={handleNextMonth}
+                aria-label="Next Month"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div className="cal-title-center">
+              {MONTH_NAMES[currentMonth]} {currentYear}
+            </div>
+
+            <div className="cal-view-modes-right">
+              <button
+                type="button"
+                className={`btn-view-mode ${calViewMode === 'month' ? 'active' : ''}`}
+                onClick={() => setCalViewMode('month')}
+              >
+                Month
+              </button>
+              <button
+                type="button"
+                className={`btn-view-mode ${calViewMode === 'list' ? 'active' : ''}`}
+                onClick={() => setCalViewMode('list')}
+              >
+                List Table
+              </button>
+            </div>
+          </div>
+
+          {/* Sub-view: Month Grid vs List Table */}
+          {calViewMode === 'list' ? (
+            /* Inline List Table with Status-Aware Join / Watch Actions */
+            <div className="events-table-wrapper" style={{ marginTop: '1rem' }}>
+              <table className="events-table">
+                <thead>
+                  <tr>
+                    <th>EVENT SOURCE TYPE</th>
+                    <th>EVENT TITLE</th>
+                    <th>DATE & TIME</th>
+                    <th>PROGRAMME INFO</th>
+                    <th>ACTIONS</th>
+                    <th>CREATED DATE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingEvents ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#00385E', fontWeight: 600 }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <RefreshCw size={18} className="spinner" style={{ animation: 'spin 1s linear infinite', color: '#00385E' }} />
+                          <span>Loading live meetings & events...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : paginatedEvents.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                        No events found matching your filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedEvents.map((ev) => {
+                      const over = isEventOver(ev);
+                      return (
+                        <tr key={ev.id}>
+                          {/* Event Source Type */}
+                          <td>
+                            <div className="source-type-cell">
+                              <div className="source-badge">
+                                {renderSourceIcon(ev.sourceType)}
+                                <span>{ev.sourceLabel}</span>
+                              </div>
+                              {ev.subType && (
+                                <span className="source-subtag">{ev.subType}</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Event Title */}
+                          <td className="event-title-cell">
+                            {ev.title}
+                          </td>
+
+                          {/* Date & Time */}
+                          <td className="event-datetime-cell">
+                            <div>Start: {formatDateTime(ev.startDateTime || ev.startDate || ev.displayStart) || ev.displayStart}</div>
+                            <div>End: {formatDateTime(ev.endDateTime || ev.endDate || ev.displayEnd) || ev.displayEnd}</div>
+                          </td>
+
+                          {/* Programme Info */}
+                          <td className="event-programme-cell">
+                            <div className="programme-title">{ev.programName}</div>
+                            <div className="programme-sub">{ev.programSub}</div>
+                          </td>
+
+                          {/* Actions: Join if Active / Upcoming, Watch/Ended if Over */}
+                          <td>
+                            <div className="event-actions-cell">
+                              {!over ? (
+                                <a
+                                  href={ev.joinUrl || '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn-event-join"
+                                >
+                                  <Video size={14} />
+                                  <span>Join</span>
+                                </a>
+                              ) : ev.recordingUrl || ev.watchUrl ? (
+                                <a
+                                  href={ev.recordingUrl || ev.watchUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn-event-join"
+                                  style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff' }}
+                                >
+                                  <PlayCircle size={14} />
+                                  <span>Watch</span>
+                                </a>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '5px 12px',
+                                  borderRadius: '6px',
+                                  background: '#f1f5f9',
+                                  color: '#64748b',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700
+                                }}>
+                                  <CheckCircle size={13} style={{ color: '#10b981' }} />
+                                  <span>Ended</span>
+                                </span>
+                              )}
+
+                              <button
+                                type="button"
+                                className="btn-view-desc-link"
+                                onClick={() => setSelectedEvent(ev)}
+                              >
+                                View Description
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Created Date */}
+                          <td className="event-created-cell">
+                            {formatDateTime(ev.createdRaw || ev.createdDate || ev.startDateTime) || ev.createdDate}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+
+              {/* Pagination Bar */}
+              <div className="events-pagination-bar">
+                <span className="page-indicator-text">
+                  Page {currentPage} of {totalPages} ({filteredEvents.length} total events)
+                </span>
+
+                <div className="pagination-controls">
+                  <button
+                    type="button"
+                    className="btn-page-nav"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    aria-label="Previous Page"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-page-nav"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    aria-label="Next Page"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Month / Week / Day Grid */
+            <div className="calendar-grid-wrapper" style={{ position: 'relative' }}>
+              {loadingEvents && (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(255, 255, 255, 0.75)',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  color: '#00385E',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  borderRadius: '8px',
+                  backdropFilter: 'blur(2px)'
+                }}>
+                  <RefreshCw size={20} className="spinner" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Loading live meetings...</span>
+                </div>
+              )}
+              <div className="calendar-weekdays-row">
+                {WEEK_DAYS.map((day) => (
+                  <div key={day.short} className="calendar-weekday-cell">
+                    <span className="weekday-name-full">{day.full}</span>
+                    <span className="weekday-name-short">{day.short}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="calendar-days-grid">
+                {calendarGridCells.map((cell, idx) => (
+                  <div
+                    key={idx}
+                    className={`calendar-day-cell ${cell.isOtherMonth ? 'other-month' : ''} ${cell.isToday ? 'is-today' : ''}`}
+                  >
+                    <div className="day-header-line">
+                      <span className="day-num">{cell.dayNumber}</span>
+                    </div>
+
+                    {cell.events && cell.events.length > 0 && (
+                      <div className="day-events-list">
+                        {cell.events.map((ev) => {
+                          const over = isEventOver(ev);
+                          return (
+                            <div
+                              key={ev.id}
+                              className="calendar-event-pill"
+                              style={{
+                                background: ev.category === 'focus_time' ? '#0f766e' : (over ? '#475569' : '#00385E'),
+                                opacity: over ? 0.8 : 1
+                              }}
+                              onClick={() => setSelectedEvent(ev)}
+                              title={`${ev.title} (${ev.displayStart}) - ${over ? 'Completed' : 'Active'}`}
+                            >
+                              <div className="pill-top-row">
+                                <span className="pill-time">
+                                  {ev.startDate.split('T')[1]?.slice(0, 5)}
+                                </span>
+                                {over && <span className="pill-status-check">✓</span>}
+                              </div>
+                              <span className="pill-title">{ev.title}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------
+          3B. TAB CONTENT: SHOW LIVE EVENT
+          ------------------------------------------------------------------ */}
+      {mainTab === 'liveEvents' && (
+        <div className="recordings-view-card">
+          {/* Live Meetings Toolbar & Filters */}
+          <div className="recordings-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ position: 'relative', minWidth: '260px', flex: 1 }}>
+              <input
+                type="text"
+                className="filter-input"
+                placeholder="Search live events or courses..."
+                value={liveMeetingSearchQuery}
+                onChange={(e) => setLiveMeetingSearchQuery(e.target.value)}
+                style={{ width: '100%', paddingRight: '32px' }}
+              />
+              <Search size={15} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>Platform:</span>
+              <button
+                type="button"
+                className={`btn-view-mode ${liveMeetingSourceFilter === 'ALL' ? 'active' : ''}`}
+                onClick={() => setLiveMeetingSourceFilter('ALL')}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                All Platforms
+              </button>
+              <button
+                type="button"
+                className={`btn-view-mode ${liveMeetingSourceFilter === 'GOOGLE_MEET' ? 'active' : ''}`}
+                onClick={() => setLiveMeetingSourceFilter('GOOGLE_MEET')}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                Google Meet
+              </button>
+              <button
+                type="button"
+                className={`btn-view-mode ${liveMeetingSourceFilter === 'ZOOM' ? 'active' : ''}`}
+                onClick={() => setLiveMeetingSourceFilter('ZOOM')}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                Zoom
+              </button>
+            </div>
+          </div>
+
+          {/* Live Meetings Grid / List */}
+          {loadingLiveMeetings ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#00385E', fontWeight: 700 }}>
+              <RefreshCw size={24} className="spinner" style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} />
+              <div>Loading live events & sessions...</div>
+            </div>
+          ) : filteredLiveMeetings.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#64748b' }}>
+              <Video size={36} style={{ color: '#cbd5e1', marginBottom: '10px' }} />
+              <div style={{ fontWeight: 700, fontSize: '0.96rem', color: '#334155' }}>No Live Events Available</div>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.84rem' }}>
+                Live expert sessions and workshops scheduled for your microcredential courses will appear here.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem', padding: '1.25rem 0' }}>
+              {filteredLiveMeetings.map((rec) => {
+                const isGoogle = (rec.sourceType || '').toUpperCase() === 'GOOGLE_MEET';
+                const isZoom = (rec.sourceType || '').toUpperCase() === 'ZOOM';
+                const isEnded = rec.liveStatus === 'Ended' || rec.liveStatus === 'Completed';
+
+                return (
+                  <div
+                    key={rec.meetingId}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '1.25rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div>
+                      {/* Platform & Status Tags */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: isGoogle ? '#fef3c7' : '#eff6ff',
+                          color: isGoogle ? '#b45309' : '#1d4ed8',
+                          border: isGoogle ? '1px solid #fde68a' : '1px solid #bfdbfe'
+                        }}>
+                          <Video size={12} />
+                          {isGoogle ? 'Google Meet' : (isZoom ? 'Zoom Cloud' : rec.sourceType)}
+                        </span>
+
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          color: isEnded ? '#475569' : '#166534',
+                          background: isEnded ? '#f1f5f9' : '#dcfce7',
+                          border: isEnded ? '1px solid #e2e8f0' : '1px solid #bbf7d0',
+                          padding: '3px 8px',
+                          borderRadius: '6px'
+                        }}>
+                          {rec.liveStatus || (isEnded ? 'Completed' : 'Upcoming')}
+                        </span>
+                      </div>
+
+                      {/* Course Title Badge */}
+                      <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#005a96', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '4px' }}>
+                        {rec.microcredentialCourseName || 'Microcredential Course'}
+                      </div>
+
+                      {/* Meeting Title */}
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '0.98rem', fontWeight: 800, color: '#00385E', lineHeight: 1.35 }}>
+                        {rec.title}
+                      </h4>
+
+                      {/* Description */}
+                      {rec.description && (
+                        <p style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: '#64748b', lineHeight: 1.45 }}>
+                          {rec.description}
+                        </p>
+                      )}
+
+                      {/* Date & Time */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', color: '#64748b', fontWeight: 600 }}>
+                        <Clock size={13} style={{ color: '#0284C7', flexShrink: 0 }} />
+                        <span>{formatDateTime(rec.startDateTime || rec.meetingDate) || 'Scheduled Live Session'}</span>
+                      </div>
+                    </div>
+
+                    {/* Show Live Event & Details Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                      {rec.joinLink ? (
+                        <a
+                          href={rec.joinLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            flex: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '9px 14px',
+                            fontSize: '0.82rem',
+                            fontWeight: 800,
+                            color: '#ffffff',
+                            background: 'linear-gradient(135deg, #00385E 0%, #005a96 100%)',
+                            borderRadius: '8px',
+                            textDecoration: 'none',
+                            boxShadow: '0 2px 6px rgba(0, 56, 94, 0.18)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <Video size={14} />
+                          <span>Show Live Event</span>
+                          <ExternalLink size={13} />
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEvent({
+                            id: rec.meetingId,
+                            title: rec.title,
+                            sourceType: isZoom ? 'zoom' : (isGoogle ? 'google_meet' : 'google_calendar'),
+                            sourceLabel: isGoogle ? 'Google Meet' : (isZoom ? 'Zoom Cloud' : rec.sourceType),
+                            displayStart: rec.startDateTime,
+                            displayEnd: rec.endDateTime,
+                            programName: rec.microcredentialCourseName,
+                            programSub: rec.description,
+                            description: rec.description,
+                            joinUrl: rec.joinLink,
+                            liveStatus: rec.liveStatus
+                          })}
+                          style={{
+                            flex: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '9px 14px',
+                            fontSize: '0.82rem',
+                            fontWeight: 800,
+                            color: '#ffffff',
+                            background: 'linear-gradient(135deg, #00385E 0%, #005a96 100%)',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(0, 56, 94, 0.18)'
+                          }}
+                        >
+                          <Video size={14} />
+                          <span>Show Live Event</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEvent({
+                          id: rec.meetingId,
+                          title: rec.title,
+                          sourceType: isZoom ? 'zoom' : (isGoogle ? 'google_meet' : 'google_calendar'),
+                          sourceLabel: isGoogle ? 'Google Meet' : (isZoom ? 'Zoom Cloud' : rec.sourceType),
+                          displayStart: rec.startDateTime,
+                          displayEnd: rec.endDateTime,
+                          programName: rec.microcredentialCourseName,
+                          programSub: rec.description,
+                          description: rec.description,
+                          joinUrl: rec.joinLink,
+                          liveStatus: rec.liveStatus
+                        })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                          padding: '9px 12px',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          color: '#00385E',
+                          background: '#f0f7fc',
+                          border: '1px solid #c9dfef',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        title="View Details"
+                      >
+                        <Info size={14} />
+                        <span>Details</span>
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------
+          4. EVENT DESCRIPTION MODAL
+          ------------------------------------------------------------------ */}
+      {selectedEvent && (
+        <div
+          className="calendar-modal-backdrop"
+          onClick={() => setSelectedEvent(null)}
+        >
+          <div
+            className="calendar-modal-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="cal-modal-header">
+              <div className="cal-modal-title-wrap">
+                <div className="source-badge">
+                  {renderSourceIcon(selectedEvent.sourceType)}
+                  <span>{selectedEvent.sourceLabel}</span>
+                </div>
+                <h3 className="cal-modal-heading">Event Details</h3>
+              </div>
+              <button
+                type="button"
+                className="btn-modal-close"
+                onClick={() => setSelectedEvent(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="cal-modal-body">
+              <div className="modal-info-item">
+                <span className="modal-info-label">Title</span>
+                <span className="modal-info-value" style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a' }}>
+                  {selectedEvent.title}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="modal-info-item">
+                  <span className="modal-info-label">Start Time</span>
+                  <span className="modal-info-value">{formatDateTime(selectedEvent.startDateTime || selectedEvent.startDate || selectedEvent.displayStart) || selectedEvent.displayStart}</span>
+                </div>
+                <div className="modal-info-item">
+                  <span className="modal-info-label">End Time</span>
+                  <span className="modal-info-value">{formatDateTime(selectedEvent.endDateTime || selectedEvent.endDate || selectedEvent.displayEnd) || selectedEvent.displayEnd}</span>
+                </div>
+              </div>
+
+              <div className="modal-info-item">
+                <span className="modal-info-label">Programme & Module</span>
+                <span className="modal-info-value">{selectedEvent.programName}</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{selectedEvent.programSub}</span>
+              </div>
+
+              <div className="modal-info-item">
+                <span className="modal-info-label">Session Description</span>
+                <div className="modal-desc-box">
+                  {selectedEvent.description || 'No additional details provided for this event.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="cal-modal-footer">
+              <button
+                type="button"
+                className="btn-modal-cancel"
+                onClick={() => setSelectedEvent(null)}
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                className="btn-modal-sync-cal"
+                onClick={() => handleDownloadEventIcs(selectedEvent)}
+                disabled={downloadingIcsId === (selectedEvent.eventId || selectedEvent.id || selectedEvent.meetingId)}
+                title="Download .ics file to add this meeting to Apple Calendar, Outlook, or Google Calendar"
+              >
+                {downloadingIcsId === (selectedEvent.eventId || selectedEvent.id || selectedEvent.meetingId) ? (
+                  <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <CalendarIcon size={15} />
+                )}
+                <span>Add to Calendar</span>
+              </button>
+
+              {!isEventOver(selectedEvent) ? (
+                <a
+                  href={selectedEvent.joinUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-modal-join-direct"
+                >
+                  <Video size={16} />
+                  <span>Join Session</span>
+                  <ExternalLink size={14} />
+                </a>
+              ) : selectedEvent.recordingUrl || selectedEvent.watchUrl ? (
+                <a
+                  href={selectedEvent.recordingUrl || selectedEvent.watchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-modal-join-direct"
+                  style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
+                >
+                  <PlayCircle size={16} />
+                  <span>Watch Recording</span>
+                  <ExternalLink size={14} />
+                </a>
+              ) : (
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  background: '#f1f5f9',
+                  color: '#64748b',
+                  fontWeight: 700,
+                  fontSize: '0.86rem'
+                }}>
+                  <CheckCircle size={15} style={{ color: '#10b981' }} />
+                  <span>Meeting Ended</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

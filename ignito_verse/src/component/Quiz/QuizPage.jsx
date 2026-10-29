@@ -1,0 +1,1793 @@
+// ignitoverse: Dedicated Assessment Quiz Flow Implementation
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Clock, 
+  Bookmark,
+  Lightbulb, 
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2, 
+  RotateCcw, 
+  Trophy,
+  Award,
+  Check,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  Eye,
+  Play,
+  X,
+  FileCheck2,
+  CheckSquare,
+  Lock,
+  ShieldCheck,
+  AlertTriangle
+} from 'lucide-react';
+import { 
+  checkStudentQuizAttemptStatus,
+  getStudentAttemptList,
+  getQuizPreviewData,
+  getQuizAttemptById,
+  saveQuestionAnswer,
+  autoSaveQuizTimer,
+  submitQuizFinal,
+  markAllAttemptsAsDone,
+  getQuizResultByQuizId,
+  resolveStudentId,
+  QUESTION_TYPES
+} from '../../services/QuizServices';
+import './quiz.css';
+import { formatDate } from '../../utils/dateFormatter';
+
+export default function QuizPage({
+  course = null,
+  onBack = () => {},
+  onNavigate = () => {}
+}) {
+  // Course Information
+  const currentCourse = course || {
+    id: 1,
+    microcredentialCourseId: 1,
+    title: 'Microcredential Course Assessment',
+    category: 'Assessment',
+    streamName: 'Microcredentials'
+  };
+
+  const courseId = Number(
+    currentCourse.microcredentialCourseId || 
+    currentCourse.courseId || 
+    currentCourse.id || 
+    sessionStorage.getItem('MicrocredentialCourseId') || 
+    localStorage.getItem('MicrocredentialCourseId') || 
+    1
+  );
+
+  const moduleMasterId = Number(
+    currentCourse.microcredentialModuleMasterId || 
+    currentCourse.selectedModuleMasterId || 
+    currentCourse.moduleMasterId || 
+    currentCourse.moduleId || 
+    sessionStorage.getItem('MicrocredentialModuleMasterId') || 
+    localStorage.getItem('MicrocredentialModuleMasterId') || 
+    0
+  );
+
+  const moduleName = currentCourse.moduleName || 
+    currentCourse.selectedModuleName || 
+    (moduleMasterId > 0 ? `Module ${moduleMasterId}` : '');
+
+  const courseTitle = currentCourse.title || currentCourse.microcredentialCourseName || 'Microcredential Course';
+  
+  const initialQuizId = Number(
+    currentCourse.quizId || 
+    currentCourse.QuizId || 
+    currentCourse.microcredentialQuizId || 
+    currentCourse.MicrocredentialQuizId || 
+    sessionStorage.getItem('MicrocredentialQuizId') || 
+    sessionStorage.getItem('QuizId') || 
+    0
+  );
+
+  // Page View Modes: 'loading' | 'attemptList' | 'quiz' | 'scoreSummary'
+  const [viewMode, setViewMode] = useState('loading');
+  const [error, setError] = useState(null);
+
+  // Attempt History & Finalized State
+  const [attemptList, setAttemptList] = useState([]);
+  const [activeQuizId, setActiveQuizId] = useState(initialQuizId);
+  const [isQuizFinalized, setIsQuizFinalized] = useState(false);
+
+  // Backend Quiz Metadata (Step 2B & 3)
+  const [quizMetadata, setQuizMetadata] = useState({
+    quizId: initialQuizId,
+    attemptId: 0,
+    quizName: 'Course Assessment',
+    quizDescription: '',
+    timeLimit: 120,
+    attemptsAllowed: 10,
+    remainingAttempts: 10,
+    attemptsDone: 0,
+    currentAttemptNumber: 1,
+    allowHints: false,
+    headerDescription: '',
+    footerDescription: ''
+  });
+
+  // Questions and Active Quiz State
+  const [questions, setQuestions] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState({}); // { [questionIndex]: optionId / answerValue }
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const [showConfirmFinalAttempt, setShowConfirmFinalAttempt] = useState(false);
+  const [showFinalSubmitAlert, setShowFinalSubmitAlert] = useState(false);
+  const [showPostSubmitModal, setShowPostSubmitModal] = useState(false);
+  const [finalizingAttempt, setFinalizingAttempt] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [scoreSummary, setScoreSummary] = useState(null);
+
+  // Step 8: View Detailed Result Modal State
+  const [viewResultModalOpen, setViewResultModalOpen] = useState(false);
+  const [resultDetailLoading, setResultDetailLoading] = useState(false);
+  const [resultDetailData, setResultDetailData] = useState(null);
+
+  // Timer State
+  const [totalDurationSeconds, setTotalDurationSeconds] = useState(120 * 60);
+  const [timeLeft, setTimeLeft] = useState(120 * 60);
+  const timerRef = useRef(null);
+  const periodicAutoSaveRef = useRef(null);
+
+  // Option Letter Helper (A, B, C, D...)
+  const getOptionLetter = (index) => String.fromCharCode(65 + (index % 26));
+
+  // ==========================================================================
+  // STEP 1 — PAGE LOAD: CHECK ATTEMPT STATUS
+  // ==========================================================================
+  const initializeQuizFlow = async () => {
+    setViewMode('loading');
+    setError(null);
+
+    try {
+      const studentId = resolveStudentId();
+      
+      // Step 1: Check Attempt Status (with moduleMasterId)
+      const statusRes = await checkStudentQuizAttemptStatus(courseId, studentId, 2, moduleMasterId);
+
+      if (statusRes && statusRes.isSuccess) {
+        const quizId = Number(statusRes.quizId || 0);
+        if (quizId > 0) {
+          setActiveQuizId(quizId);
+          setQuizMetadata(prev => ({ ...prev, quizId }));
+          try {
+            sessionStorage.setItem('MicrocredentialQuizId', String(quizId));
+          } catch (_) {}
+        }
+
+        // Branching Condition:
+        if (statusRes.isAttemptedFlag === 1) {
+          // STEP 2A: Already Attempted -> Fetch Attempt List
+          await loadAttemptList(quizId || initialQuizId, studentId);
+        } else {
+          // STEP 2B: Not Attempted -> Load Quiz Preview Data & Resume/Start
+          await startQuizExecution(courseId, studentId, moduleMasterId);
+        }
+      } else {
+        // Fallback directly to loading quiz preview
+        await startQuizExecution(courseId, studentId, moduleMasterId);
+      }
+    } catch (err) {
+      console.error('Error in initializeQuizFlow:', err);
+      setError('Failed to initialize quiz assessment. Please try again.');
+      setViewMode('attemptList');
+    }
+  };
+
+  useEffect(() => {
+    initializeQuizFlow();
+  }, [courseId, moduleMasterId]);
+
+  // ==========================================================================
+  // STEP 2A — FETCH ATTEMPT LIST
+  // ==========================================================================
+  const loadAttemptList = async (quizId, studentId) => {
+    try {
+      const listRes = await getStudentAttemptList(quizId, studentId);
+      if (listRes && listRes.isSuccess) {
+        const list = listRes.quizAttemptList || [];
+        setAttemptList(list);
+
+        const hasFinalSubmission = list.some(item => Boolean(item.isFinalSubmission || item.IsFinalSubmission));
+        if (hasFinalSubmission) {
+          setIsQuizFinalized(true);
+        }
+        setViewMode('attemptList');
+      } else {
+        setAttemptList([]);
+        setViewMode('attemptList');
+      }
+    } catch (err) {
+      console.error('Error in loadAttemptList:', err);
+      setViewMode('attemptList');
+    }
+  };
+
+  // ==========================================================================
+  // STEP 2B & STEP 3 — START QUIZ & PREFILL EXISTING ATTEMPT
+  // ==========================================================================
+  const startQuizExecution = async (cId = courseId, sId = resolveStudentId(), mId = moduleMasterId) => {
+    if (isQuizFinalized) {
+      alert('You have already submitted and finalized this assessment. No additional attempts are allowed.');
+      return;
+    }
+
+    setViewMode('loading');
+    setError(null);
+
+    try {
+      // Step 2B: Get Quiz Preview Data (with moduleMasterId)
+      const previewRes = await getQuizPreviewData(cId, sId, 2, mId);
+
+      if (previewRes && (previewRes.success || previewRes.isSuccess || (previewRes.questions && previewRes.questions.length > 0))) {
+        const qId = Number(
+          previewRes.quizId || 
+          activeQuizId || 
+          initialQuizId || 
+          currentCourse?.quizId || 
+          currentCourse?.QuizId || 
+          currentCourse?.microcredentialQuizId || 
+          previewRes.questions?.[0]?.quizId || 
+          sessionStorage.getItem('MicrocredentialQuizId') || 
+          sessionStorage.getItem('QuizId') || 
+          0
+        );
+        const attId = previewRes.attemptId || 0;
+        if (qId > 0) {
+          setActiveQuizId(qId);
+          try {
+            sessionStorage.setItem('MicrocredentialQuizId', String(qId));
+          } catch (_) {}
+        }
+
+        const attemptsAllowed = Number(previewRes.attemptsAllowed ?? previewRes.AttemptsAllowed ?? 10) || 10;
+        const currentAttemptNumber = Number(previewRes.currentAttemptNumber ?? previewRes.CurrentAttemptNumber ?? 1) || 1;
+        const attemptsDone = Number(previewRes.attemptsDone ?? previewRes.AttemptsDone ?? (currentAttemptNumber - 1));
+        
+        let remainingAttempts = attemptsAllowed - attemptsDone;
+        if (previewRes.remainingAttempts !== undefined && Number(previewRes.remainingAttempts) > 0) {
+          remainingAttempts = Number(previewRes.remainingAttempts);
+        } else if (previewRes.RemainingAttempts !== undefined && Number(previewRes.RemainingAttempts) > 0) {
+          remainingAttempts = Number(previewRes.RemainingAttempts);
+        }
+        remainingAttempts = Math.max(0, remainingAttempts);
+
+        if (remainingAttempts <= 0 && attemptsDone > 0) {
+          setIsQuizFinalized(true);
+          await loadAttemptList(qId, sId);
+          return;
+        }
+
+        setQuizMetadata({
+          quizId: qId,
+          attemptId: attId,
+          quizName: previewRes.quizName || (moduleName ? `${courseTitle} — ${moduleName}` : `Quiz: ${courseTitle}`),
+          quizDescription: previewRes.quizDescription || '',
+          timeLimit: previewRes.timeLimit || 120,
+          attemptsAllowed: attemptsAllowed,
+          remainingAttempts: remainingAttempts,
+          attemptsDone: attemptsDone,
+          currentAttemptNumber: previewRes.currentAttemptNumber || 1,
+          allowHints: Boolean(previewRes.allowHints),
+          headerDescription: previewRes.headerDescription || '',
+          footerDescription: previewRes.footerDescription || ''
+        });
+
+        // Compute total duration
+        let durationSec = 120 * 60;
+        if (previewRes.timeLimit && previewRes.timeLimit > 0) {
+          durationSec = previewRes.timeLimit > 300 ? previewRes.timeLimit : previewRes.timeLimit * 60;
+        }
+        setTotalDurationSeconds(durationSec);
+        setTimeLeft(durationSec);
+
+        // Normalize Questions & Answer Options
+        const rawQuestions = Array.isArray(previewRes.questions) ? previewRes.questions : [];
+        const rawOptions = Array.isArray(previewRes.answerOptions) ? previewRes.answerOptions : [];
+
+        const structuredQuestions = rawQuestions.map((q, qIdx) => {
+          const questionId = q.questionId || q.questionsId || (qIdx + 1);
+          
+          const optionsSource = Array.isArray(q.options) && q.options.length > 0
+            ? q.options
+            : rawOptions.filter(opt => (opt.questionId || opt.questionsId) === questionId);
+
+          const matchingOptions = optionsSource
+            .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
+            .map((opt, optIdx) => ({
+              id: opt.answerId || (optIdx + 1),
+              answerId: opt.answerId || (optIdx + 1),
+              text: opt.text || '',
+              displayOrder: opt.displayOrder || (optIdx + 1),
+              letter: getOptionLetter(optIdx),
+              isCorrect: Boolean(opt.isCorrect)
+            }));
+
+          return {
+            id: questionId,
+            questionId,
+            questionsId: questionId,
+            quizId: q.quizId || qId,
+            degreeQuestionType: q.degreeQuestionType || 1,
+            title: q.title || '',
+            questionText: q.questionText || `Question ${qIdx + 1}`,
+            points: Number(q.points || 1),
+            hint: q.hint || '',
+            explanation: q.questionFeedback || '',
+            options: matchingOptions
+          };
+        });
+
+        setQuestions(structuredQuestions);
+        setCurrentIndex(0);
+
+        // STEP 3: Check and Resume Existing Attempt by ID if attemptId > 0
+        let prefilledAnswers = {};
+        if (attId > 0) {
+          try {
+            const attemptRes = await getQuizAttemptById(attId, sId);
+            if (attemptRes && attemptRes.isSuccess) {
+              // Resume timer if lastActivityTime is present
+              if (attemptRes.lastActivityTime > 0 && attemptRes.lastActivityTime < durationSec) {
+                setTimeLeft(attemptRes.lastActivityTime);
+              }
+
+              // Prefill saved answers
+              const savedAnswers = Array.isArray(attemptRes.degreeQuizAnswers) ? attemptRes.degreeQuizAnswers : [];
+              savedAnswers.forEach(ans => {
+                const qIdx = structuredQuestions.findIndex(sq => sq.questionId === ans.questionId);
+                if (qIdx >= 0) {
+                  prefilledAnswers[qIdx] = Number(ans.selectedOptionIds) || ans.selectedOptionIds || ans.answerText;
+                }
+              });
+            }
+          } catch (e) {
+            console.warn('Could not resume existing attempt, starting fresh:', e);
+          }
+        }
+
+        setSelectedAnswers(prefilledAnswers);
+        setViewMode('quiz');
+      } else {
+        setError(previewRes?.message || previewRes?.errorDescription || 'No questions found for this quiz.');
+        setViewMode('attemptList');
+      }
+    } catch (err) {
+      console.error('Error in startQuizExecution:', err);
+      setError('Unable to load quiz. Please try again.');
+      setViewMode('attemptList');
+    }
+  };
+
+  // ==========================================================================
+  // STEP 4 & STEP 5 — REAL-TIME SAVE ON OPTION CHANGE & 30s PERIODIC TIMER SAVE
+  // ==========================================================================
+  useEffect(() => {
+    if (viewMode !== 'quiz' || questions.length === 0) return;
+
+    // 1-second countdown interval
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          handleAutoSubmitOnExpiry();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // STEP 5: Periodic 30-Second Timer Auto-Save
+    periodicAutoSaveRef.current = setInterval(() => {
+      if (quizMetadata.quizId > 0) {
+        autoSaveQuizTimer(
+          quizMetadata.quizId,
+          timeLeft,
+          totalDurationSeconds,
+          quizMetadata.currentAttemptNumber,
+          resolveStudentId()
+        ).then(res => {
+          if (res?.attemptId > 0) {
+            setQuizMetadata(prev => ({
+              ...prev,
+              attemptId: res.attemptId
+            }));
+            try {
+              sessionStorage.setItem('ActiveQuizAttemptId', String(res.attemptId));
+              sessionStorage.setItem('attemptId', String(res.attemptId));
+            } catch (_) {}
+          }
+        }).catch(e => console.warn('Periodic timer save skipped:', e));
+      }
+    }, 30000);
+
+    return () => {
+      clearInterval(timerRef.current);
+      clearInterval(periodicAutoSaveRef.current);
+    };
+  }, [viewMode, questions.length, quizMetadata.quizId, timeLeft, totalDurationSeconds]);
+
+  // Handle Option Select (STEP 4)
+  const handleSelectOption = (optionId) => {
+    if (viewMode !== 'quiz' || !currentQ) return;
+
+    // Update local state
+    setSelectedAnswers(prev => ({
+      ...prev,
+      [currentIndex]: optionId
+    }));
+
+    const targetQuizId = Number(
+      quizMetadata.quizId || 
+      activeQuizId || 
+      currentQ.quizId || 
+      initialQuizId ||
+      currentCourse?.quizId || 
+      currentCourse?.QuizId || 
+      sessionStorage.getItem('MicrocredentialQuizId') || 
+      sessionStorage.getItem('QuizId') || 
+      0
+    );
+
+    // STEP 4: Real-time Auto-Save Single Question Answer to Server
+    saveQuestionAnswer({
+      quizId: targetQuizId,
+      questionId: currentQ.questionId,
+      degreeQuestionType: currentQ.degreeQuestionType,
+      answerData: {
+        selectedOptionId: optionId,
+        timeSpentInSeconds: totalDurationSeconds - timeLeft
+      },
+      lastActivityTime: timeLeft,
+      totalTimeAllowed: totalDurationSeconds,
+      attemptNumber: quizMetadata.currentAttemptNumber,
+      studentId: resolveStudentId()
+    }).then(res => {
+      if (res?.attemptId > 0) {
+        setQuizMetadata(prev => ({
+          ...prev,
+          attemptId: res.attemptId
+        }));
+        try {
+          sessionStorage.setItem('ActiveQuizAttemptId', String(res.attemptId));
+          sessionStorage.setItem('attemptId', String(res.attemptId));
+        } catch (_) {}
+      }
+    }).catch(err => {
+      console.warn('Real-time answer save error:', err);
+    });
+  };
+
+  // ==========================================================================
+  // STEP 6A & 6B — SUBMISSION (Timer Expiry & Manual Submit)
+  // ==========================================================================
+  const handleAutoSubmitOnExpiry = () => {
+    finalizeSubmission(true);
+  };
+
+  const finalizeSubmission = async (isAutoExpiry = false) => {
+    clearInterval(timerRef.current);
+    clearInterval(periodicAutoSaveRef.current);
+    setSubmitting(true);
+
+    try {
+      const studentId = resolveStudentId();
+      const attemptId = Number(
+        quizMetadata.attemptId || 
+        sessionStorage.getItem('ActiveQuizAttemptId') || 
+        sessionStorage.getItem('attemptId') || 
+        0
+      );
+      const qId = quizMetadata.quizId || activeQuizId;
+
+      // STEP 6A/6B: Final submit API call (Submits THIS attempt)
+      const submitRes = await submitQuizFinal(attemptId, studentId);
+
+      // Calculate attempt counts (DO NOT call markAllAttemptsAsDone here!)
+      const currentRemaining = quizMetadata.remainingAttempts !== undefined ? quizMetadata.remainingAttempts : 10;
+      const newRemaining = Math.max(0, currentRemaining - 1);
+      const newAttemptsDone = (quizMetadata.attemptsDone || 0) + 1;
+
+      setQuizMetadata(prev => ({
+        ...prev,
+        remainingAttempts: newRemaining,
+        attemptsDone: newAttemptsDone,
+        currentAttemptNumber: prev.currentAttemptNumber + 1
+      }));
+
+      // Calculate score summary
+      let correctCount = 0;
+      let earnedPoints = 0;
+      const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1), 0);
+
+      questions.forEach((q, idx) => {
+        const studentAnsId = selectedAnswers[idx];
+        const correctOpt = q.options.find(o => o.isCorrect);
+        if (correctOpt && studentAnsId === correctOpt.id) {
+          correctCount += 1;
+          earnedPoints += (q.points || 1);
+        }
+      });
+
+      const percentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+      const passed = percentage >= 70;
+
+      setScoreSummary({
+        totalQuestions: questions.length,
+        answeredCount: Object.keys(selectedAnswers).length,
+        correctCount,
+        incorrectCount: Object.keys(selectedAnswers).length - correctCount,
+        unansweredCount: questions.length - Object.keys(selectedAnswers).length,
+        earnedPoints,
+        totalPoints,
+        percentage,
+        passed,
+        scoreMessage: submitRes?.scoreMessage || submitRes?.message || '',
+        timeTaken: totalDurationSeconds - timeLeft,
+        isAutoExpiry,
+        attemptId: attemptId,
+        remainingAttempts: newRemaining,
+        attemptsDone: newAttemptsDone,
+        attemptNumber: quizMetadata.currentAttemptNumber
+      });
+
+      setShowConfirmSubmit(false);
+      setViewMode('scoreSummary');
+      // Step 6B on success: prompt user with score & choices (Start Next Attempt or OK -> Step 7)
+      setShowPostSubmitModal(true);
+    } catch (err) {
+      console.error('Error during quiz final submit:', err);
+      setShowConfirmSubmit(false);
+      setViewMode('scoreSummary');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Helper to start the next attempt without locking the quiz
+  const handleStartNextAttempt = async () => {
+    setSelectedAnswers({});
+    setCurrentIndex(0);
+    setScoreSummary(null);
+    setShowConfirmSubmit(false);
+    setShowConfirmFinalAttempt(false);
+    try {
+      sessionStorage.removeItem('ActiveQuizAttemptId');
+      sessionStorage.removeItem('attemptId');
+    } catch (_) {}
+    await startQuizExecution(courseId, resolveStudentId(), moduleMasterId);
+  };
+
+  // ==========================================================================
+  // SUBMISSION PATH A: Submit Attempt & Redirect to Watch Video Page for Next Attempt
+  // ==========================================================================
+  const handleSubmitForNextAttempt = async () => {
+    try {
+      setSubmitting(true);
+      const studentId = resolveStudentId();
+      const attemptId = Number(
+        quizMetadata.attemptId || 
+        sessionStorage.getItem('ActiveQuizAttemptId') || 
+        sessionStorage.getItem('attemptId') || 
+        0
+      );
+
+      // Submit current attempt via Step 6B API
+      if (attemptId > 0) {
+        await submitQuizFinal(attemptId, studentId);
+      }
+
+      // Clear cached attempt id so next attempt starts fresh
+      try {
+        sessionStorage.removeItem('ActiveQuizAttemptId');
+        sessionStorage.removeItem('attemptId');
+      } catch (_) {}
+
+      // Redirect directly to watch video page as requested
+      onBack();
+    } catch (err) {
+      console.error('Error submitting attempt for next attempt:', err);
+      onBack();
+    } finally {
+      setSubmitting(false);
+      setShowConfirmSubmit(false);
+      setShowPostSubmitModal(false);
+    }
+  };
+
+  // ==========================================================================
+  // SUBMISSION PATH B: Confirm Final Submit (Calls Step 7 UpdateAllAttemptDone API)
+  // ==========================================================================
+  const handleConfirmFinalSubmit = async () => {
+    try {
+      setFinalizingAttempt(true);
+      const studentId = resolveStudentId();
+      const attemptId = Number(
+        quizMetadata.attemptId || 
+        sessionStorage.getItem('ActiveQuizAttemptId') || 
+        sessionStorage.getItem('attemptId') || 
+        0
+      );
+      const qId = quizMetadata.quizId || activeQuizId;
+
+      // 1. Submit current attempt first if not yet finalized
+      try {
+        if (attemptId > 0) {
+          await submitQuizFinal(attemptId, studentId);
+        }
+      } catch (e) {
+        console.warn('Attempt save error:', e);
+      }
+
+      // 2. Call Final Submit API (Step 7: MicrocredentialQuizUpdateAllAttemptDone)
+      if (qId > 0) {
+        await markAllAttemptsAsDone(qId, studentId);
+      }
+
+      setIsQuizFinalized(true);
+      // Back on watch video page as requested
+      onBack();
+    } catch (err) {
+      console.error('Error in final submit:', err);
+      onBack();
+    } finally {
+      setFinalizingAttempt(false);
+      setShowFinalSubmitAlert(false);
+      setShowConfirmFinalAttempt(false);
+      setShowConfirmSubmit(false);
+      setShowPostSubmitModal(false);
+    }
+  };
+
+  // Cancel Final Submit: "andd no than back on watch vidio page"
+  const handleCancelFinalSubmit = () => {
+    setShowFinalSubmitAlert(false);
+    setShowConfirmFinalAttempt(false);
+    onBack();
+  };
+
+  // ==========================================================================
+  // STEP 8 — VIEW SPECIFIC RESULT BY ATTEMPT ID (Modal)
+  // ==========================================================================
+  const handleViewAttemptResult = async (attempt) => {
+    setViewResultModalOpen(true);
+    setResultDetailLoading(true);
+    setResultDetailData(null);
+
+    try {
+      const studentId = resolveStudentId();
+      const qId = attempt?.quizId || quizMetadata.quizId || activeQuizId;
+      const attId = attempt?.attemptId || quizMetadata.attemptId;
+
+      const resultRes = await getQuizResultByQuizId(qId, attId, studentId);
+      if (resultRes && resultRes.isSuccess) {
+        setResultDetailData(resultRes);
+      } else {
+        setResultDetailData(resultRes || null);
+      }
+    } catch (err) {
+      console.error('Error fetching quiz result detail:', err);
+    } finally {
+      setResultDetailLoading(false);
+    }
+  };
+
+  // Time formatter
+  const formatTimer = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const renderQuestionHtml = (content) => {
+    if (!content) return '';
+    return { __html: content };
+  };
+
+  const currentQ = questions[currentIndex] || null;
+  const totalQuestions = questions.length;
+  const answeredCount = Object.keys(selectedAnswers).length;
+  const progressPct = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+
+  // ==========================================================================
+  // RENDER: LOADING STATE
+  // ==========================================================================
+  if (viewMode === 'loading') {
+    return (
+      <div className="quiz-page-wrapper">
+        <div className="quiz-page-container">
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '120px 20px',
+            background: '#ffffff',
+            borderRadius: '18px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+            textAlign: 'center'
+          }}>
+            <Loader2 size={44} style={{ animation: 'spin 1s linear infinite', color: '#1d68f0', marginBottom: 16 }} />
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0' }}>
+              Setting Up Quiz...
+            </h2>
+            <p style={{ color: '#64748b', fontSize: '0.95rem', margin: 0 }}>
+              Checking attempt status and preparing your assessment.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // RENDER: STEP 2A — ATTEMPT HISTORY LIST TABLE
+  // ==========================================================================
+  if (viewMode === 'attemptList') {
+    return (
+      <div className="quiz-page-wrapper">
+        <div className="quiz-page-container">
+          
+          {/* Breadcrumbs */}
+          <nav className="quiz-breadcrumbs-bar" aria-label="Breadcrumb">
+            <button type="button" className="breadcrumb-link" onClick={() => onNavigate('microcredentials')}>
+              My Learning
+            </button>
+            <span className="breadcrumb-separator">&gt;</span>
+            <button type="button" className="breadcrumb-link" onClick={onBack}>
+              {courseTitle}
+            </button>
+            <span className="breadcrumb-separator">&gt;</span>
+            <span className="breadcrumb-current">Assessment Attempts</span>
+          </nav>
+
+          {/* Attempt History Card */}
+          <div className="attempt-history-main-card">
+            
+            <div className="attempt-history-header">
+              <div className="attempt-history-title-wrap">
+                <h2>
+                  {courseTitle} {moduleName && <span style={{ fontSize: '0.85rem', fontWeight: 600, background: '#e0f2fe', color: '#0369a1', padding: '3px 10px', borderRadius: '6px', marginLeft: '8px' }}>{moduleName}</span>} - Quiz History
+                </h2>
+                <p>
+                  {isQuizFinalized 
+                    ? 'Assessment completed. All attempts are finalized.' 
+                    : 'Review your previous attempts or start a new attempt.'}
+                </p>
+              </div>
+
+              {isQuizFinalized ? (
+                <div className="badge-attempts-completed">
+                  <Lock size={15} />
+                  <span>Assessment Finalized</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {attemptList && attemptList.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-result-attempts"
+                      style={{ borderColor: '#ef4444', color: '#dc2626', padding: '8px 16px', fontSize: '0.9rem' }}
+                      onClick={() => setShowConfirmFinalAttempt(true)}
+                    >
+                      <Lock size={15} />
+                      <span>Mark as Final</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-start-new-attempt"
+                    onClick={() => startQuizExecution()}
+                  >
+                    <Play size={16} fill="#ffffff" />
+                    <span>Start New Attempt</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {attemptList && attemptList.length > 0 ? (
+              <div className="attempt-table-container">
+                <table className="attempt-history-table">
+                  <thead>
+                    <tr>
+                      <th>Attempt</th>
+                      <th>Date & Time</th>
+                      <th>Score</th>
+                      <th>Percentage</th>
+                      <th>Status / Grade</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attemptList.map((item, idx) => (
+                      <tr key={item.attemptId || idx}>
+                        <td>
+                          <span className="attempt-num-badge">
+                            Attempt #{item.attemptNumber || idx + 1}
+                          </span>
+                        </td>
+                        <td>{formatDate(item.attemptDate, 'Completed')}</td>
+                        <td>
+                          <strong>{item.score}</strong> / {item.totalMarks || 100}
+                        </td>
+                        <td>{item.percentage}%</td>
+                        <td>
+                          <span className={`grade-badge ${item.isPassed || item.percentage >= 70 ? 'passed' : 'failed'}`}>
+                            {item.grade || (item.isPassed || item.percentage >= 70 ? 'Passed' : 'Needs Review')}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-view-attempt-result"
+                            onClick={() => handleViewAttemptResult(item)}
+                          >
+                            <Eye size={15} />
+                            <span>View Result</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '50px 20px', color: '#64748b' }}>
+                <FileCheck2 size={48} color="#94a3b8" style={{ marginBottom: 12 }} />
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px 0' }}>
+                  {isQuizFinalized ? 'Assessment Already Finalized' : 'No Attempts Recorded Yet'}
+                </h3>
+                <p style={{ margin: '0 0 20px 0' }}>
+                  {isQuizFinalized 
+                    ? 'This assessment has already been completed and locked.' 
+                    : 'You can begin your first attempt whenever you\'re ready.'}
+                </p>
+                {!isQuizFinalized && (
+                  <button
+                    type="button"
+                    className="btn-start-new-attempt"
+                    onClick={() => startQuizExecution()}
+                  >
+                    <Play size={16} fill="#ffffff" />
+                    <span>Start Quiz Now</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+          </div>
+
+          {/* Action Row */}
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <button
+              type="button"
+              className="btn-quiz-prev"
+              onClick={onBack}
+            >
+              <ArrowLeft size={16} />
+              <span>Back to Course</span>
+            </button>
+          </div>
+
+          {/* STEP 8: VIEW ATTEMPT RESULT BREAKDOWN MODAL */}
+          {viewResultModalOpen && (
+            <div className="quiz-result-modal-overlay">
+              <div className="quiz-result-modal-card">
+                
+                <div className="quiz-result-modal-header">
+                  <h3>Assessment Attempt Result Breakdown</h3>
+                  <button 
+                    type="button" 
+                    className="btn-modal-close-icon"
+                    onClick={() => setViewResultModalOpen(false)}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="quiz-result-modal-body">
+                  {resultDetailLoading ? (
+                    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                      <Loader2 size={36} style={{ animation: 'spin 1s linear infinite', color: '#1d68f0', marginBottom: 12 }} />
+                      <p style={{ color: '#64748b', margin: 0 }}>Loading detailed result breakdown...</p>
+                    </div>
+                  ) : resultDetailData ? (
+                    <>
+                      {/* Top Stats */}
+                      <div className="result-breakdown-stats">
+                        <div className="breakdown-stat-box">
+                          <span className="num" style={{ color: '#1d68f0' }}>{resultDetailData.studentPercentage}%</span>
+                          <span className="lbl">Percentage</span>
+                        </div>
+                        <div className="breakdown-stat-box">
+                          <span className="num" style={{ color: '#16a34a' }}>
+                            {resultDetailData.questions?.filter(q => q.isStudentCorrect).length || 0}
+                          </span>
+                          <span className="lbl">Correct</span>
+                        </div>
+                        <div className="breakdown-stat-box">
+                          <span className="num" style={{ color: '#dc2626' }}>{resultDetailData.wrongAnswers || 0}</span>
+                          <span className="lbl">Wrong</span>
+                        </div>
+                        <div className="breakdown-stat-box">
+                          <span className="num" style={{ color: '#64748b' }}>{resultDetailData.skippedQuestions || 0}</span>
+                          <span className="lbl">Skipped</span>
+                        </div>
+                      </div>
+
+                      {/* Question Breakdown List */}
+                      <div className="breakdown-questions-list">
+                        <h4 style={{ margin: '8px 0', fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                          Questions Summary ({resultDetailData.questions?.length || 0})
+                        </h4>
+
+                        {resultDetailData.questions && resultDetailData.questions.map((q, qIdx) => (
+                          <div key={q.questionId || qIdx} className={`result-question-item ${q.isStudentCorrect ? 'correct' : 'wrong'}`}>
+                            <div className="result-q-header">
+                              <span className="result-q-title">Question {qIdx + 1}</span>
+                              <span className={`result-q-badge ${q.isStudentCorrect ? 'correct' : 'wrong'}`}>
+                                {q.isStudentCorrect ? `Correct (+${q.studentPointsAwarded || q.points || 1} pts)` : 'Incorrect (0 pts)'}
+                              </span>
+                            </div>
+
+                            <div 
+                              style={{ color: '#334155', fontSize: '0.92rem', marginBottom: 8 }}
+                              dangerouslySetInnerHTML={renderQuestionHtml(q.questionText)}
+                            />
+
+                            {q.correctAnswerData && (
+                              <div style={{ fontSize: '0.84rem', color: '#16a34a', background: '#f0fdf4', padding: '6px 10px', borderRadius: 6 }}>
+                                <strong>Correct Answer:</strong> {q.correctAnswerData}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p style={{ textAlign: 'center', color: '#64748b', padding: '40px 0' }}>
+                      Result breakdown details are not available.
+                    </p>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* STEP 7: CONFIRM FINAL ATTEMPT MODAL */}
+          {showConfirmFinalAttempt && (
+            <div className="quiz-confirm-modal-overlay">
+              <div className="quiz-confirm-modal-card">
+                <div className="modal-icon-alert" style={{ background: '#fef2f2', color: '#ef4444' }}>
+                  <AlertTriangle size={32} />
+                </div>
+                <h3 className="modal-confirm-title">
+                  Mark Attempt as Final?
+                </h3>
+                <p className="modal-confirm-desc">
+                  Are you sure you want to mark this attempt as final?
+                  <span style={{ display: 'block', marginTop: 10, fontWeight: 600, color: '#dc2626' }}>
+                    ⚠️ This will lock all further attempts for this quiz. You will not be able to retake or start another attempt.
+                  </span>
+                </p>
+                
+                <div className="modal-confirm-actions">
+                  <button
+                    type="button"
+                    className="btn-modal-back"
+                    onClick={() => setShowConfirmFinalAttempt(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-modal-confirm-submit"
+                    style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                    onClick={handleConfirmFinalAttempt}
+                  >
+                    Yes, Mark as Final
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // RENDER: STEP 2B, 3, 4, 5 — ACTIVE QUIZ VIEW
+  // ==========================================================================
+  if (viewMode === 'quiz') {
+    return (
+      <div className="quiz-page-wrapper">
+        <div className="quiz-page-container">
+          
+          {/* 1. Breadcrumbs */}
+          <nav className="quiz-breadcrumbs-bar" aria-label="Breadcrumb">
+            <button type="button" className="breadcrumb-link" onClick={() => onNavigate('microcredentials')}>
+              My Learning
+            </button>
+            <span className="breadcrumb-separator">&gt;</span>
+            <button type="button" className="breadcrumb-link" onClick={() => setViewMode('attemptList')}>
+              {courseTitle}
+            </button>
+            <span className="breadcrumb-separator">&gt;</span>
+            <span className="breadcrumb-current">{quizMetadata.quizName || 'Assessment'}</span>
+          </nav>
+
+          {/* 2. Main Two-Column Quiz Section */}
+          <div className="quiz-layout-grid">
+            
+            {/* LEFT COLUMN: HEADER & ACTIVE QUESTION CARD */}
+            <div className="quiz-main-column">
+
+              {/* Top Header Section */}
+              <div className="quiz-header-section">
+                <div className="quiz-header-left">
+                  <h1 className="quiz-hero-title">{quizMetadata.quizName || `Quiz: ${courseTitle}`}</h1>
+                  <p className="quiz-hero-subtitle">
+                    {quizMetadata.quizDescription || 'Test your understanding of the key concepts covered in this module.'}
+                  </p>
+                </div>
+
+                {/* Bookmark Mark Badge */}
+                <div className="quiz-mark-pill-badge">
+                  <Bookmark size={16} className="mark-badge-icon" />
+                  <span className="mark-badge-text">{currentQ?.points || 1} Mark</span>
+                </div>
+              </div>
+
+              {/* Active Question Card */}
+              {currentQ && (
+                <div className="quiz-question-main-card">
+                  
+                  {/* Question Counter Header */}
+                  <div className="question-card-top-meta">
+                    <span className="question-counter-label">
+                      Question {currentIndex + 1} of {totalQuestions}
+                    </span>
+                  </div>
+
+                  {/* Question Heading (Rich Text Support) */}
+                  <div 
+                    className="question-headline-text"
+                    dangerouslySetInnerHTML={renderQuestionHtml(currentQ.questionText)}
+                  />
+
+                  {/* Options List */}
+                  <div className="question-options-stack">
+                    {currentQ.options && currentQ.options.length > 0 ? (
+                      currentQ.options.map((option, optIdx) => {
+                        const isSelected = selectedAnswers[currentIndex] === option.id;
+
+                        return (
+                          <button
+                            key={option.id || optIdx}
+                            type="button"
+                            className={`quiz-option-item ${isSelected ? 'selected' : ''}`}
+                            onClick={() => handleSelectOption(option.id)}
+                          >
+                            {/* Option Letter Pill */}
+                            <div className={`quiz-option-letter-badge ${isSelected ? 'selected' : ''}`}>
+                              {option.letter || getOptionLetter(optIdx)}
+                            </div>
+
+                            {/* Option Text */}
+                            <span 
+                              className="quiz-option-text-content"
+                              dangerouslySetInnerHTML={renderQuestionHtml(option.text)}
+                            />
+
+                            {/* Radio Circle on Far Right */}
+                            <div className={`quiz-radio-circle ${isSelected ? 'checked' : ''}`}>
+                              {isSelected && <div className="quiz-radio-inner-dot" />}
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <p style={{ color: '#94a3b8', fontStyle: 'italic' }}>No options configured for this question.</p>
+                    )}
+                  </div>
+
+                  {/* Bottom Navigation Buttons */}
+                  <div className="quiz-navigation-action-bar">
+                    <button
+                      type="button"
+                      className="btn-quiz-prev"
+                      onClick={() => currentIndex > 0 && setCurrentIndex(prev => prev - 1)}
+                      disabled={currentIndex === 0}
+                    >
+                      <ArrowLeft size={16} />
+                      <span>Previous</span>
+                    </button>
+
+                    {currentIndex < totalQuestions - 1 ? (
+                      <button
+                        type="button"
+                        className="btn-quiz-next"
+                        onClick={() => setCurrentIndex(prev => prev + 1)}
+                      >
+                        <span>Next</span>
+                        <ArrowRight size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-quiz-next btn-quiz-submit"
+                        onClick={() => setShowConfirmSubmit(true)}
+                      >
+                        <span>Submit Quiz</span>
+                        <CheckCircle2 size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT COLUMN: SIDEBAR WITH COMBINED TIMER + PROGRESS, NAV GRID & TIP */}
+            <aside className="quiz-sidebar-column">
+              
+              {/* 1. Combined Timer & Progress Card */}
+              <div className="quiz-side-card quiz-combined-timer-card">
+                <div className="timer-inner-card">
+                  <div className="timer-inner-left">
+                    <div className="timer-svg-wrap">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1d68f0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="13" r="8" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="5" x2="12" y2="2" />
+                        <line x1="9" y1="2" x2="15" y2="2" />
+                      </svg>
+                    </div>
+                    <div className="timer-labels">
+                      <span className="timer-caption-title">Time Left</span>
+                      <span className={`timer-digits-text ${timeLeft < 120 ? 'warning' : ''}`}>
+                        {formatTimer(timeLeft)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="timer-corner-glow" />
+                </div>
+
+                {/* Progress Section */}
+                <div className="progress-sub-section">
+                  <div className="progress-title-row">
+                    <span className="progress-section-heading">Progress</span>
+                    <span className="progress-fraction-info">{answeredCount} of {totalQuestions} answered</span>
+                  </div>
+                  <div className="progress-line-container">
+                    <div className="quiz-progress-track">
+                      <div 
+                        className="quiz-progress-fill" 
+                        style={{ width: `${progressPct}%` }} 
+                      />
+                    </div>
+                    <span className="progress-pct-stat">{progressPct}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Questions Palette Grid */}
+              <div className="quiz-side-card question-palette-card">
+                <div className="nav-title-row">
+                  <h3 className="nav-title">Questions Palette</h3>
+                  <span className="nav-answered-stat">{answeredCount}/{totalQuestions}</span>
+                </div>
+
+                <div className="question-grid-matrix">
+                  {questions.map((q, idx) => {
+                    const isCurrent = currentIndex === idx;
+                    const isAnswered = selectedAnswers[idx] !== undefined;
+
+                    let btnClass = 'q-grid-btn';
+                    if (isAnswered) {
+                      btnClass += ' answered';
+                    } else {
+                      btnClass += ' unanswered';
+                    }
+                    if (isCurrent) {
+                      btnClass += ' current';
+                    }
+
+                    return (
+                      <button
+                        key={q.id || idx}
+                        type="button"
+                        className={btnClass}
+                        onClick={() => setCurrentIndex(idx)}
+                        title={`Question ${idx + 1}: ${isAnswered ? 'Answered' : 'Not answered'}`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Palette Legend */}
+                <div className="nav-grid-legend-list">
+                  <div className="legend-row">
+                    <span className="legend-box legend-current" />
+                    <span className="legend-text">Current</span>
+                  </div>
+                  <div className="legend-row">
+                    <span className="legend-box legend-answered" />
+                    <span className="legend-text">Answered</span>
+                  </div>
+                  <div className="legend-row">
+                    <span className="legend-box legend-unanswered" />
+                    <span className="legend-text">Unanswered</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Pro-Tip Card */}
+              <div className="quiz-tip-card">
+                <div className="tip-icon-wrap">
+                  <Lightbulb size={20} className="tip-bulb-icon" />
+                </div>
+                <div className="tip-content">
+                  <h4 className="tip-title">Assessment Tip</h4>
+                  <p className="tip-text">
+                    Answers are auto-saved automatically. Review all questions before final submission.
+                  </p>
+                </div>
+              </div>
+
+            </aside>
+
+          </div>
+
+          {/* STEP 6B: CONFIRMATION MODAL BEFORE MANUAL SUBMISSION */}
+          {showConfirmSubmit && (
+            <div className="quiz-confirm-modal-overlay">
+              <div className="quiz-confirm-modal-card" style={{ maxWidth: '520px' }}>
+                <div className="modal-icon-alert">
+                  <CheckCircle2 size={32} />
+                </div>
+                <h3 className="modal-confirm-title" style={{ fontSize: '1.35rem', marginBottom: '8px' }}>
+                  Submit Quiz Assessment?
+                </h3>
+                <p className="modal-confirm-desc">
+                  You have answered <strong>{answeredCount}</strong> out of <strong>{totalQuestions}</strong> questions. 
+                  {totalQuestions - answeredCount > 0 && (
+                    <span className="unanswered-warning" style={{ display: 'block', marginTop: 6 }}>
+                      ⚠️ You still have {totalQuestions - answeredCount} unanswered question{totalQuestions - answeredCount > 1 ? 's' : ''}!
+                    </span>
+                  )}
+                  <span style={{ display: 'block', marginTop: 10, fontSize: '0.9rem', color: '#64748b' }}>
+                    How would you like to proceed with your submission?
+                  </span>
+                </p>
+                
+                <div className="modal-confirm-actions" style={{ flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
+                  {/* Button 1: Next Attempt -> Submit & redirect to watch video page */}
+                  <button
+                    type="button"
+                    className="btn-modal-confirm-submit"
+                    style={{ background: '#1d68f0', borderColor: '#1d68f0', width: '100%', padding: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    disabled={submitting || finalizingAttempt}
+                    onClick={handleSubmitForNextAttempt}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Submitting attempt...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={16} fill="#ffffff" />
+                        <span>Next Attempt (Back to Video)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Button 2: Continue to Final Submit -> Opens Alert Popup */}
+                  <button
+                    type="button"
+                    className="btn-modal-confirm-submit"
+                    style={{
+                      background: '#ffffff',
+                      color: '#dc2626',
+                      border: '1.5px solid #dc2626',
+                      width: '100%',
+                      padding: '13px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                    disabled={submitting || finalizingAttempt}
+                    onClick={() => {
+                      setShowConfirmSubmit(false);
+                      setShowFinalSubmitAlert(true);
+                    }}
+                  >
+                    <Lock size={16} />
+                    <span>Continue to Final Submit</span>
+                  </button>
+
+                  {/* Button 3: Continue Review */}
+                  <button
+                    type="button"
+                    className="btn-modal-back"
+                    style={{ width: '100%', padding: '10px' }}
+                    disabled={submitting || finalizingAttempt}
+                    onClick={() => setShowConfirmSubmit(false)}
+                  >
+                    Continue Review (Cancel)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 7: ALERT POPUP - ARE YOU SURE YOU WANT TO FINAL SUBMIT? */}
+          {showFinalSubmitAlert && (
+            <div className="quiz-confirm-modal-overlay">
+              <div className="quiz-confirm-modal-card" style={{ maxWidth: '480px', textAlign: 'center' }}>
+                <div className="modal-icon-alert" style={{ background: '#fef2f2', color: '#dc2626', margin: '0 auto 16px' }}>
+                  <AlertTriangle size={36} />
+                </div>
+                
+                <h3 className="modal-confirm-title" style={{ fontSize: '1.35rem', color: '#0f172a', marginBottom: '10px' }}>
+                  Are you sure you want to final submit?
+                </h3>
+                
+                <p className="modal-confirm-desc" style={{ fontSize: '0.95rem', color: '#475569', lineHeight: 1.5 }}>
+                  If you do this, then this quiz is final submitted and all remaining attempts will be closed.
+                </p>
+
+                <div className="modal-confirm-actions" style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                  {/* No button: redirects back to watch video page */}
+                  <button
+                    type="button"
+                    className="btn-modal-back"
+                    style={{ flex: 1, padding: '12px', background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', fontWeight: 600 }}
+                    disabled={finalizingAttempt}
+                    onClick={handleCancelFinalSubmit}
+                  >
+                    No (Back to Video)
+                  </button>
+
+                  {/* Yes button: calls final submit API */}
+                  <button
+                    type="button"
+                    className="btn-modal-confirm-submit"
+                    style={{ flex: 1, padding: '12px', background: '#dc2626', borderColor: '#dc2626', color: '#ffffff', fontWeight: 700 }}
+                    disabled={finalizingAttempt}
+                    onClick={handleConfirmFinalSubmit}
+                  >
+                    {finalizingAttempt ? (
+                      <>
+                        <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <span>Yes, Final Submit</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // RENDER: STEP 6 & 7 — SCORE / SUMMARY SCREEN (PAGE OPENED AFTER FINAL SUBMIT)
+  // User cannot restart/retake quiz once submitted.
+  // ==========================================================================
+  return (
+    <div className="quiz-page-wrapper">
+      <div className="quiz-page-container">
+        
+        {/* Breadcrumbs */}
+        <nav className="quiz-breadcrumbs-bar" aria-label="Breadcrumb">
+          <button type="button" className="breadcrumb-link" onClick={() => onNavigate('microcredentials')}>
+            My Learning
+          </button>
+          <span className="breadcrumb-separator">&gt;</span>
+          <button type="button" className="breadcrumb-link" onClick={() => setViewMode('attemptList')}>
+            {courseTitle}
+          </button>
+          <span className="breadcrumb-separator">&gt;</span>
+          <span className="breadcrumb-current">Assessment Result Summary</span>
+        </nav>
+
+        {/* Score Summary Card */}
+        <div className="quiz-result-summary-card">
+          
+          <div className="result-header-banner">
+            <div className="result-trophy-icon-wrap">
+              {scoreSummary?.passed ? (
+                <Trophy size={44} className="trophy-gold" />
+              ) : (
+                <Award size={44} className="award-blue" />
+              )}
+            </div>
+            <h2 className="result-title">
+              {scoreSummary?.passed ? 'Assessment Completed Successfully!' : 'Assessment Attempt Submitted'}
+            </h2>
+            <p className="result-subtitle">
+              {scoreSummary?.scoreMessage || (scoreSummary?.passed 
+                ? 'Congratulations! You have successfully completed and finalized your assessment.' 
+                : 'Your assessment attempt has been recorded. Review your performance breakdown below.')}
+            </p>
+          </div>
+
+          {/* Key Performance Stats */}
+          <div className="result-score-badges-row">
+            <div className="result-stat-box highlight">
+              <span className="stat-label">Your Score</span>
+              <span className="stat-value">{scoreSummary?.percentage}%</span>
+              <span className="stat-sub">{scoreSummary?.earnedPoints} / {scoreSummary?.totalPoints} marks</span>
+            </div>
+
+            <div className="result-stat-box success">
+              <span className="stat-label">Correct Answers</span>
+              <span className="stat-value">{scoreSummary?.correctCount}</span>
+              <span className="stat-sub">Out of {scoreSummary?.totalQuestions} questions</span>
+            </div>
+
+            <div className="result-stat-box danger">
+              <span className="stat-label">Incorrect Answers</span>
+              <span className="stat-value">{scoreSummary?.incorrectCount}</span>
+              <span className="stat-sub">{scoreSummary?.unansweredCount} unanswered</span>
+            </div>
+
+            <div className="result-stat-box">
+              <span className="stat-label">Time Taken</span>
+              <span className="stat-value">{formatTimer(scoreSummary?.timeTaken || 0)}</span>
+              <span className="stat-sub">Total: {formatTimer(totalDurationSeconds)}</span>
+            </div>
+          </div>
+
+          {/* Banner: Active Attempts Left vs Finalized */}
+          {!isQuizFinalized && (scoreSummary?.remainingAttempts > 0 || quizMetadata.remainingAttempts > 0) ? (
+            <div className="final-submit-lock-notice" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+              <div className="lock-notice-icon-box" style={{ background: '#dcfce7' }}>
+                <CheckCircle2 size={22} color="#16a34a" />
+              </div>
+              <div className="lock-notice-text-wrap">
+                <h4 className="lock-notice-title" style={{ color: '#166534' }}>
+                  Attempt #{scoreSummary?.attemptNumber || quizMetadata.currentAttemptNumber} Submitted Successfully!
+                </h4>
+                <p className="lock-notice-desc" style={{ color: '#15803d' }}>
+                  You have <strong>{scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts}</strong> attempt(s) remaining. 
+                  You can start your next attempt to improve your score, or mark this attempt as your final submission.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="final-submit-lock-notice">
+              <div className="lock-notice-icon-box">
+                <ShieldCheck size={22} color="#16a34a" />
+              </div>
+              <div className="lock-notice-text-wrap">
+                <h4 className="lock-notice-title">Assessment Submission Finalized</h4>
+                <p className="lock-notice-desc">
+                  Your assessment has been officially finalized and recorded. Retaking or restarting this quiz is disabled.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="result-actions-tray">
+            {/* Start Next Attempt Button */}
+            {!isQuizFinalized && (scoreSummary?.remainingAttempts > 0 || quizMetadata.remainingAttempts > 0) && (
+              <button
+                type="button"
+                className="btn-start-new-attempt"
+                style={{ padding: '12px 24px', fontSize: '0.95rem' }}
+                onClick={handleStartNextAttempt}
+              >
+                <Play size={17} fill="#ffffff" />
+                <span>Start Next Attempt ({scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts} Left)</span>
+              </button>
+            )}
+
+            {/* Mark as Final Attempt Button */}
+            {!isQuizFinalized && (
+              <button
+                type="button"
+                className="btn-result-attempts"
+                style={{ borderColor: '#ef4444', color: '#dc2626' }}
+                onClick={() => setShowConfirmFinalAttempt(true)}
+              >
+                <Lock size={16} />
+                <span>Mark as Final Attempt</span>
+              </button>
+            )}
+
+            {/* Review Detailed Breakdown Button (Step 8) */}
+            <button
+              type="button"
+              className="btn-result-breakdown"
+              onClick={() => handleViewAttemptResult({
+                attemptId: quizMetadata.attemptId || scoreSummary?.attemptId,
+                quizId: quizMetadata.quizId || activeQuizId
+              })}
+            >
+              <Eye size={16} />
+              <span>Review Detailed Breakdown</span>
+            </button>
+
+            {/* View All Past Attempts Button (Step 2A) */}
+            <button
+              type="button"
+              className="btn-result-attempts"
+              onClick={() => loadAttemptList(quizMetadata.quizId || activeQuizId, resolveStudentId())}
+            >
+              <FileCheck2 size={16} />
+              <span>View All Past Attempts</span>
+            </button>
+
+            {/* Back to Course Button */}
+            <button
+              type="button"
+              className="btn-result-return"
+              onClick={onBack}
+            >
+              <ArrowLeft size={16} />
+              <span>Back to Course</span>
+            </button>
+          </div>
+
+        </div>
+
+        {/* STEP 8: VIEW ATTEMPT RESULT BREAKDOWN MODAL FROM SUMMARY SCREEN */}
+        {viewResultModalOpen && (
+          <div className="quiz-result-modal-overlay">
+            <div className="quiz-result-modal-card">
+              
+              <div className="quiz-result-modal-header">
+                <h3>Assessment Attempt Result Breakdown</h3>
+                <button 
+                  type="button" 
+                  className="btn-modal-close-icon"
+                  onClick={() => setViewResultModalOpen(false)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="quiz-result-modal-body">
+                {resultDetailLoading ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                    <Loader2 size={36} style={{ animation: 'spin 1s linear infinite', color: '#1d68f0', marginBottom: 12 }} />
+                    <p style={{ color: '#64748b', margin: 0 }}>Loading detailed result breakdown...</p>
+                  </div>
+                ) : resultDetailData ? (
+                  <>
+                    {/* Top Stats */}
+                    <div className="result-breakdown-stats">
+                      <div className="breakdown-stat-box">
+                        <span className="num" style={{ color: '#1d68f0' }}>{resultDetailData.studentPercentage}%</span>
+                        <span className="lbl">Percentage</span>
+                      </div>
+                      <div className="breakdown-stat-box">
+                        <span className="num" style={{ color: '#16a34a' }}>
+                          {resultDetailData.questions?.filter(q => q.isStudentCorrect).length || 0}
+                        </span>
+                        <span className="lbl">Correct</span>
+                      </div>
+                      <div className="breakdown-stat-box">
+                        <span className="num" style={{ color: '#dc2626' }}>{resultDetailData.wrongAnswers || 0}</span>
+                        <span className="lbl">Wrong</span>
+                      </div>
+                      <div className="breakdown-stat-box">
+                        <span className="num" style={{ color: '#64748b' }}>{resultDetailData.skippedQuestions || 0}</span>
+                        <span className="lbl">Skipped</span>
+                      </div>
+                    </div>
+
+                    {/* Question Breakdown List */}
+                    <div className="breakdown-questions-list">
+                      <h4 style={{ margin: '8px 0', fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                        Questions Summary ({resultDetailData.questions?.length || 0})
+                      </h4>
+
+                      {resultDetailData.questions && resultDetailData.questions.map((q, qIdx) => (
+                        <div key={q.questionId || qIdx} className={`result-question-item ${q.isStudentCorrect ? 'correct' : 'wrong'}`}>
+                          <div className="result-q-header">
+                            <span className="result-q-title">Question {qIdx + 1}</span>
+                            <span className={`result-q-badge ${q.isStudentCorrect ? 'correct' : 'wrong'}`}>
+                              {q.isStudentCorrect ? `Correct (+${q.studentPointsAwarded || q.points || 1} pts)` : 'Incorrect (0 pts)'}
+                            </span>
+                          </div>
+
+                          <div 
+                            style={{ color: '#334155', fontSize: '0.92rem', marginBottom: 8 }}
+                            dangerouslySetInnerHTML={renderQuestionHtml(q.questionText)}
+                          />
+
+                          {q.correctAnswerData && (
+                            <div style={{ fontSize: '0.84rem', color: '#16a34a', background: '#f0fdf4', padding: '6px 10px', borderRadius: 6 }}>
+                              <strong>Correct Answer:</strong> {q.correctAnswerData}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p style={{ textAlign: 'center', color: '#64748b', padding: '40px 0' }}>
+                    Result breakdown details are not available.
+                  </p>
+                )}
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* STEP 6B: POST-SUBMISSION PROMPT (Shows Score & Offers Next Attempt vs OK) */}
+        {showPostSubmitModal && (
+          <div className="quiz-confirm-modal-overlay">
+            <div className="quiz-confirm-modal-card" style={{ maxWidth: '480px' }}>
+              <div className="modal-icon-alert" style={{ background: '#eff6ff', color: '#1d68f0' }}>
+                <Trophy size={36} color="#1d68f0" />
+              </div>
+              
+              <h3 className="modal-confirm-title" style={{ fontSize: '1.3rem', marginBottom: '8px' }}>
+                {scoreSummary?.isAutoExpiry ? "Time's Up!" : "Assessment Attempt Submitted!"}
+              </h3>
+
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '16px',
+                margin: '16px 0',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '2.2rem', fontWeight: 800, color: scoreSummary?.passed ? '#16a34a' : '#1d68f0' }}>
+                  {scoreSummary?.percentage}%
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '4px' }}>
+                  {scoreSummary?.earnedPoints} of {scoreSummary?.totalPoints} marks • {scoreSummary?.correctCount} correct
+                </div>
+                {scoreSummary?.scoreMessage && (
+                  <p style={{ margin: '8px 0 0', fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
+                    {scoreSummary.scoreMessage}
+                  </p>
+                )}
+              </div>
+
+              <p className="modal-confirm-desc" style={{ marginBottom: '20px' }}>
+                {(scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts) > 0 ? (
+                  <span>
+                    You have <strong>{scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts}</strong> attempt(s) remaining.
+                    <br />
+                    Would you like to start your next attempt to improve your score, or confirm this as your final submission?
+                  </span>
+                ) : (
+                  <span>
+                    You have completed all available attempts for this assessment. Click <strong>OK</strong> to finalize your assessment.
+                  </span>
+                )}
+              </p>
+
+              <div className="modal-confirm-actions" style={{ flexDirection: 'column', gap: '10px' }}>
+                {(scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts) > 0 && (
+                  <button
+                    type="button"
+                    className="btn-modal-confirm-submit"
+                    style={{ background: '#1d68f0', borderColor: '#1d68f0', width: '100%', padding: '12px' }}
+                    onClick={() => {
+                      setShowPostSubmitModal(false);
+                      handleStartNextAttempt();
+                    }}
+                  >
+                    <Play size={16} fill="#ffffff" style={{ marginRight: '8px' }} />
+                    <span>Start Next Attempt</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="btn-modal-confirm-submit"
+                  style={{
+                    background: (scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts) > 0 ? '#ffffff' : '#1d68f0',
+                    color: (scoreSummary?.remainingAttempts ?? quizMetadata.remainingAttempts) > 0 ? '#334155' : '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    width: '100%',
+                    padding: '12px'
+                  }}
+                  onClick={() => {
+                    setShowPostSubmitModal(false);
+                    setShowConfirmFinalAttempt(true);
+                  }}
+                >
+                  <Check size={16} style={{ marginRight: '8px' }} />
+                  <span>OK (Mark as Final Attempt)</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-modal-back"
+                  style={{ width: '100%', padding: '10px' }}
+                  onClick={() => setShowPostSubmitModal(false)}
+                >
+                  Review Score Details
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* STEP 7: ALERT POPUP - ARE YOU SURE YOU WANT TO FINAL SUBMIT? */}
+        {(showFinalSubmitAlert || showConfirmFinalAttempt) && (
+          <div className="quiz-confirm-modal-overlay">
+            <div className="quiz-confirm-modal-card" style={{ maxWidth: '480px', textAlign: 'center' }}>
+              <div className="modal-icon-alert" style={{ background: '#fef2f2', color: '#dc2626', margin: '0 auto 16px' }}>
+                <AlertTriangle size={36} />
+              </div>
+              <h3 className="modal-confirm-title" style={{ fontSize: '1.35rem', color: '#0f172a', marginBottom: '10px' }}>
+                Are you sure you want to final submit?
+              </h3>
+              <p className="modal-confirm-desc" style={{ fontSize: '0.95rem', color: '#475569', lineHeight: 1.5 }}>
+                If you do this, then this quiz is final submitted and all remaining attempts will be closed.
+              </p>
+              
+              <div className="modal-confirm-actions" style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  className="btn-modal-back"
+                  style={{ flex: 1, padding: '12px', background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', fontWeight: 600 }}
+                  disabled={finalizingAttempt}
+                  onClick={handleCancelFinalSubmit}
+                >
+                  No (Back to Video)
+                </button>
+                <button
+                  type="button"
+                  className="btn-modal-confirm-submit"
+                  disabled={finalizingAttempt}
+                  style={{ flex: 1, padding: '12px', background: '#dc2626', borderColor: '#dc2626', color: '#ffffff', fontWeight: 700 }}
+                  onClick={handleConfirmFinalSubmit}
+                >
+                  {finalizingAttempt ? (
+                    <>
+                      <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Yes, Final Submit</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+

@@ -1,0 +1,46 @@
+/**
+ * INPUT PARAMETER FILE: Microcredential Transcript By Time Input DTO Builder
+ * Builds input parameter body for MicrocredentialTranscriptByTime POST request.
+ * 
+ * @param {number} [studentId=0] - Student identifier
+ * @param {number} [studentDegreeAdmissionId=0] - Student degree admission identifier
+ * @param {string} [videoId=''] - Video identifier
+ * @param {string} [question=''] - Student raise-hand question/query
+ * @param {number} [microcredentialCourseId=0] - Microcredential course identifier
+ * @param {number} [handRaiseTime=0] - Hand raise time in seconds/timestamp
+ * @param {string} [econtent=''] - E-content text
+ * @param {boolean} [isEcontent=false] - Whether content is E-content
+ * @param {number} [microcredentialModuleMasterId=0] - Microcredential module master identifier
+ * @returns {object} Formatted request headers and JSON stringified body payload
+ */
+export function buildMicrocredentialTranscriptByTimeInput(
+    studentId = 0,
+    studentDegreeAdmissionId = 0,
+    videoId = '',
+    question = '',
+    microcredentialCourseId = 0,
+    handRaiseTime = 0,
+    econtent = '',
+    isEcontent = false,
+    microcredentialModuleMasterId = 0
+) {
+    const numModuleId = Number(microcredentialModuleMasterId) || 0;
+    return {
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            StudentId: Number(studentId) || 0,
+            StudentDegreeAdmissionId: Number(studentDegreeAdmissionId) || 0,
+            VideoId: videoId || '',
+            Question: question || '',
+            MicrocredentialCourseId: Number(microcredentialCourseId) || 0,
+            HandRaiseTime: Number(handRaiseTime) || 0,
+            Econtent: econtent || '',
+            IsEcontent: Boolean(isEcontent),
+            MicrocredentialModuleMasterId: numModuleId,
+            microcredentialModuleMasterId: numModuleId
+        })
+    };
+}
