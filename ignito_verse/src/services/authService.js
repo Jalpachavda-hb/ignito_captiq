@@ -16,6 +16,29 @@ import {
 
 const STORAGE_TOKEN_KEY = 'ignito_auth_token';
 const STORAGE_USER_KEY = 'ignito_auth_user';
+const IDENTITY_KEYS = [
+  STORAGE_TOKEN_KEY,
+  STORAGE_USER_KEY,
+  'AccessToken',
+  'accessToken',
+  'token',
+  'StudentId',
+  'studentId',
+  'StudentName',
+  'studentName',
+  'Email',
+  'MobileNumber',
+  'ProfileImage',
+  'ignito_user',
+  'user'
+];
+
+function clearStoredIdentity() {
+  IDENTITY_KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+}
 
 /**
  * Sends OTP to student's registered Email or Mobile Number.
@@ -78,10 +101,12 @@ export async function validateStudentLoginOTP(
   });
 
   // 3. Parse Output Parameter DTO
-  const outputDto = parseValidateStudentLoginOTPOutput(response.data, response.status);
+  const loginIdentity = params.loginIdentity || params.email || params.mobileNumber || '';
+  const outputDto = parseValidateStudentLoginOTPOutput(response.data, response.status, loginIdentity);
 
-  // 4. Save session storage on success
-  if (outputDto.isSuccess || outputDto.success) {
+  // 4. Replace any previous student session, then save this login only
+  if ((outputDto.isSuccess || outputDto.success) && outputDto.studentId > 0) {
+    clearStoredIdentity();
     if (outputDto.accessToken) {
       localStorage.setItem(STORAGE_TOKEN_KEY, outputDto.accessToken);
       localStorage.setItem('AccessToken', outputDto.accessToken);
@@ -123,14 +148,43 @@ export async function loginUser(email) {
  * Logs out user and clears local session.
  */
 export function logoutUser() {
-  localStorage.removeItem(STORAGE_TOKEN_KEY);
-  localStorage.removeItem(STORAGE_USER_KEY);
-  localStorage.removeItem('AccessToken');
-  localStorage.removeItem('StudentId');
-  localStorage.removeItem('StudentName');
-  localStorage.removeItem('Email');
-  localStorage.removeItem('MobileNumber');
-  localStorage.removeItem('ProfileImage');
+  clearStoredIdentity();
+}
+
+function nameFromEmail(email = '') {
+  const local = String(email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
+  if (!local) return '';
+  return local.split(/\s+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function isEmailAddress(value = '') {
+  return /@/.test(String(value || '').trim());
+}
+
+/**
+ * Shows the student's name. An email address is not used as the visible name.
+ */
+export function signedInDisplayName(user, { firstNameOnly = false } = {}) {
+  if (!user) return 'User';
+  const candidates = [user.studentName, user.fullName, user.name]
+    .map(value => String(value || '').trim())
+    .filter(value => value && !isEmailAddress(value));
+  const emailLocal = String(user.email || '').split('@')[0].trim().toLowerCase();
+  const studentName = candidates.find(value => value.toLowerCase() !== emailLocal) || candidates[0] || '';
+  const chosen = studentName || nameFromEmail(user.email) || 'User';
+  if (!firstNameOnly) return chosen;
+  return chosen.split(/\s+/)[0] || 'User';
+}
+
+export function normalizeSignedInUser(user) {
+  if (!user) return null;
+  const displayName = signedInDisplayName(user);
+  return {
+    ...user,
+    name: displayName,
+    studentName: displayName,
+    fullName: displayName
+  };
 }
 
 /**
@@ -139,7 +193,7 @@ export function logoutUser() {
 export function getSavedUserSession() {
   try {
     const raw = localStorage.getItem(STORAGE_USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? normalizeSignedInUser(JSON.parse(raw)) : null;
   } catch {
     return null;
   }

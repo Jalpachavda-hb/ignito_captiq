@@ -168,7 +168,7 @@ export default function LoginPage({
 
       const result = await sendStudentLoginOTP(payload);
 
-      if (result.isSuccess || result.success) {
+      if ((result.isSuccess || result.success) && Number(result.studentId) > 0) {
         setStudentId(result.studentId || 0);
         setOtpId(result.otpId || 0);
         setOtpDigits(['', '', '', '']);
@@ -199,10 +199,11 @@ export default function LoginPage({
       const result = await validateStudentLoginOTP({
         studentId,
         otpId,
-        otp: otpDigits.join('')
+        otp: otpDigits.join(''),
+        loginIdentity: emailOrMobile.trim()
       });
 
-      if (result.isSuccess || result.success) {
+      if ((result.isSuccess || result.success) && Number(result.studentId) > 0 && result.user) {
         setAuthStage('granted');
         setTimeout(() => {
           onLoginSuccess(result.user);

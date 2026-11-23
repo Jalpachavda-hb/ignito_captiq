@@ -11,6 +11,8 @@ import { buildStudentMicrocredentialsQuizAttemptListInput } from '../dto/input/s
 import { parseStudentMicrocredentialsQuizAttemptListOutput, parseStudentMicrocredentialsQuizAttemptListErrorOutput } from '../dto/output/studentMicrocredentialsQuizAttemptListOutput';
 import { buildGetStudentMicrocredentialQuizResultGetByQuizIdInput } from '../dto/input/getStudentMicrocredentialQuizResultGetByQuizIdInput';
 import { parseGetStudentMicrocredentialQuizResultGetByQuizIdOutput, parseGetStudentMicrocredentialQuizResultGetByQuizIdErrorOutput } from '../dto/output/getStudentMicrocredentialQuizResultGetByQuizIdOutput';
+import { buildGetStudentIssuedCertificateInput } from '../dto/input/getStudentIssuedCertificateInput';
+import { parseGetStudentIssuedCertificateOutput, parseGetStudentIssuedCertificateErrorOutput, issuedCertificateErrorText } from '../dto/output/getStudentIssuedCertificateOutput';
 
 /**
  * Fetches enrolled microcredential courses for a student.
@@ -138,5 +140,44 @@ export async function getStudentMicrocredentialQuizResultGetByQuizId(
     } catch (error) {
         console.error('Error in getStudentMicrocredentialQuizResultGetByQuizId:', error);
         return parseGetStudentMicrocredentialQuizResultGetByQuizIdErrorOutput({ message: error.message }, 500);
+    }
+}
+
+/**
+ * Fetches certificates issued to the logged-in student.
+ * API: POST /api/StudentMyProfileAPI/GetStudentIssuedCertificate
+ *
+ * @param {number} [studentId=0] - Student ID (0 uses session studentId on backend)
+ * @returns {Promise<object>} Parsed output containing `{ success, getStudentIssuedCertificate, status, message, rawData }`
+ */
+export async function getStudentIssuedCertificate(studentId = 0) {
+    try {
+        let finalStudentId = Number(studentId) || 0;
+        if (!finalStudentId || finalStudentId === 0) {
+            finalStudentId = getLoggedInStudentId();
+        }
+        const inputDto = buildGetStudentIssuedCertificateInput(finalStudentId);
+        const response = await apiClient('api/StudentMyProfileAPI/GetStudentIssuedCertificate', {
+            method: 'POST',
+            headers: inputDto.headers,
+            body: inputDto.body
+        });
+
+        if (!response.ok && response.status !== 200) {
+            const errorDto = parseGetStudentIssuedCertificateErrorOutput(response.data, response.status);
+            errorDto.message = issuedCertificateErrorText(errorDto) || errorDto.message;
+            return errorDto;
+        }
+
+        const outputDto = parseGetStudentIssuedCertificateOutput(response.data, response.status);
+        if (!outputDto.success) {
+            const errorDto = parseGetStudentIssuedCertificateErrorOutput(response.data, response.status);
+            errorDto.message = issuedCertificateErrorText(outputDto) || issuedCertificateErrorText(errorDto) || errorDto.message;
+            return errorDto;
+        }
+        return outputDto;
+    } catch (error) {
+        console.error('Error in getStudentIssuedCertificate:', error);
+        return parseGetStudentIssuedCertificateErrorOutput({ message: error.message }, 500);
     }
 }

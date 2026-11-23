@@ -1,19 +1,20 @@
 // ignitoverse: Executive Learner Profile & Portal with Microcredential Quiz Attempts Flow
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck, BookOpen, Clock,
   Check, ArrowRight, PlayCircle, Building2,
   Briefcase, Sparkles, Calendar, Star,
   Award, CheckCircle2, XCircle, AlertCircle, ArrowLeft, RefreshCw,
   Search, Eye, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Minus, HelpCircle,
-  Lock, LogIn, Camera, GraduationCap, Pencil, BarChart2, Filter
+  Lock, LogIn, Camera, GraduationCap, Pencil, BarChart2, Filter, Download
 } from 'lucide-react';
 import profileBgImg from '../../assets/profilebg.png';
 import staticAvatarImg from '../../assets/home/nori-post-2-720x720.webp';
 import {
   getStudentEnrolledMicrocredentialCourse,
   studentMicrocredentialsQuizAttemptList,
-  getStudentMicrocredentialQuizResultGetByQuizId
+  getStudentMicrocredentialQuizResultGetByQuizId,
+  getStudentIssuedCertificate
 } from '../../services/profileService';
 import { getStudentAttemptList } from '../../services/QuizServices';
 import { getLoggedInStudentId } from '../../services/microcredentialService';
@@ -22,12 +23,23 @@ import { formatImageUrl } from '../../dto/output/homepageOutputs';
 import StudentCalendar from './Calendar/StudentCalendar';
 import './ProfilePage.css';
 import { formatDate } from '../../utils/dateFormatter';
+import { signedInDisplayName } from '../../services/authService';
 
 
 // Helper to strip HTML tags from backend strings (e.g., <p>text</p>)
 function stripHtml(html) {
   if (!html || typeof html !== 'string') return '';
   return html.replace(/<[^>]*>/g, '').trim();
+}
+
+function isSafeCertificateUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
 }
 
 export default function ProfilePage({
@@ -38,10 +50,11 @@ export default function ProfilePage({
   onNavigate = () => { },
   onLogin = () => { }
 }) {
-  // Navigation Tabs: 'courses' | 'quiz' | 'calendar'
+  // Navigation Tabs: 'courses' | 'quiz' | 'calendar' | 'certificates'
   const [activeTab, setActiveTab] = useState(
     initialTab === 'calendar' || initialTab === 'events' ? 'calendar' :
-    initialTab === 'quiz' || initialTab === 'quiz-results' || initialTab === 'quizzes' ? 'quiz' : 'courses'
+    initialTab === 'quiz' || initialTab === 'quiz-results' || initialTab === 'quizzes' ? 'quiz' :
+    initialTab === 'certificates' || initialTab === 'certificate' ? 'certificates' : 'courses'
   );
 
   // Enrolled courses state
@@ -53,6 +66,16 @@ export default function ProfilePage({
   const [loadingQuizzes, setLoadingQuizzes] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [calendarEventsCount, setCalendarEventsCount] = useState(0);
+
+  // Issued certificates
+  const [issuedCertificates, setIssuedCertificates] = useState([]);
+  const [loadingCertificates, setLoadingCertificates] = useState(false);
+  const [certificatesError, setCertificatesError] = useState('');
+  const [certificateSearchQuery, setCertificateSearchQuery] = useState('');
+  const [certificateStatusFilter, setCertificateStatusFilter] = useState('all');
+  const certificatesLoadedRef = useRef(false);
+  const certificateRequestRef = useRef(0);
+  const loadedCertificateStudentRef = useRef(0);
 
   // Expanded Quiz Attempt Rows state (dynamic from user activity)
   const [expandedQuizId, setExpandedQuizId] = useState(null);
@@ -125,6 +148,8 @@ export default function ProfilePage({
       setActiveTab('calendar');
     } else if (initialTab === 'quiz' || initialTab === 'quiz-results' || initialTab === 'quizzes') {
       setActiveTab('quiz');
+    } else if (initialTab === 'certificates' || initialTab === 'certificate') {
+      setActiveTab('certificates');
     } else if (initialTab === 'courses' || initialTab === 'dashboard') {
       setActiveTab('courses');
     }
@@ -168,6 +193,69 @@ export default function ProfilePage({
     fetchEnrolledCourses();
     return () => { isMounted = false; };
   }, [user, isAuthenticated]);
+
+  const fetchIssuedCertificates = async () => {
+    const requestId = certificateRequestRef.current + 1;
+    certificateRequestRef.current = requestId;
+    setLoadingCertificates(true);
+    setCertificatesError('');
+    try {
+      const studentId = getSessionStudentId();
+      const res = await getStudentIssuedCertificate(studentId);
+      if (requestId !== certificateRequestRef.current) return;
+      if (res?.success) {
+        setIssuedCertificates(Array.isArray(res.getStudentIssuedCertificate) ? res.getStudentIssuedCertificate : []);
+      } else {
+        setCertificatesError(res?.message || res?.errorDescription || 'Unable to load issued certificates.');
+      }
+    } catch (err) {
+      if (requestId !== certificateRequestRef.current) return;
+      console.error('Error in fetchIssuedCertificates:', err);
+      setCertificatesError(err?.message || 'Unable to load issued certificates.');
+    } finally {
+      if (requestId === certificateRequestRef.current) {
+        setLoadingCertificates(false);
+        certificatesLoadedRef.current = true;
+        loadedCertificateStudentRef.current = getSessionStudentId();
+      }
+    }
+  };
+
+  // Load once for the tab count, and again whenever the certificates tab opens
+  // so the presigned PDF link is still valid.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      certificateRequestRef.current += 1;
+      certificatesLoadedRef.current = false;
+      loadedCertificateStudentRef.current = 0;
+      setIssuedCertificates([]);
+      setCertificatesError('');
+      setLoadingCertificates(false);
+      return;
+    }
+    const studentId = getSessionStudentId();
+    const openingCertificates = activeTab === 'certificates';
+    const alreadyLoaded = certificatesLoadedRef.current && loadedCertificateStudentRef.current === studentId;
+    if (!openingCertificates && alreadyLoaded) return;
+
+    fetchIssuedCertificates();
+    return () => {
+      certificateRequestRef.current += 1;
+    };
+  }, [activeTab, isAuthenticated, user, sessionStudentId]);
+
+  const handleViewCertificate = (certificate) => {
+    if (!certificate || certificate.isRevoked) return;
+    const url = String(certificate.certificatePdfUrl || '').trim();
+    if (!isSafeCertificateUrl(url)) {
+      setCertificatesError('Certificate file is not available. Refresh the list and try again.');
+      return;
+    }
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      setCertificatesError('The browser blocked the certificate window. Allow pop-ups and try again.');
+    }
+  };
 
   // Fetch quiz master list when quiz tab is active
   useEffect(() => {
@@ -327,6 +415,17 @@ export default function ProfilePage({
       (q.streamName && q.streamName.toLowerCase().includes(term)) ||
       (q.microcredentialCourseName && q.microcredentialCourseName.toLowerCase().includes(term))
     );
+  });
+
+  const baseCertificates = Array.isArray(issuedCertificates) ? issuedCertificates : [];
+  const displayedCertificates = baseCertificates.filter((certificate) => {
+    if (certificateStatusFilter === 'active' && certificate.isRevoked) return false;
+    if (certificateStatusFilter === 'revoked' && !certificate.isRevoked) return false;
+    if (!certificateSearchQuery) return true;
+    const term = certificateSearchQuery.toLowerCase();
+    const name = certificate.courseOrProgramName || '';
+    const credentialId = certificate.credentialId || '';
+    return name.toLowerCase().includes(term) || credentialId.toLowerCase().includes(term);
   });
 
   const overallProgress = baseCourses.length > 0
@@ -600,7 +699,7 @@ export default function ProfilePage({
               <div className="profile-avatar-ss-wrap">
                 <img
                   src={user?.avatar || user?.profileImage || staticAvatarImg}
-                  alt={user?.name || 'Leesa Mehra'}
+                  alt={signedInDisplayName(user)}
                   className="profile-avatar-ss-img"
                   onError={(e) => {
                     e.currentTarget.onerror = null;
@@ -611,7 +710,7 @@ export default function ProfilePage({
 
               <div className="profile-user-info-ss">
                 <div className="profile-user-name-row-ss">
-                  <h1 className="profile-user-name-ss">{user?.name || 'Leesa Mehra'}</h1>
+                  <h1 className="profile-user-name-ss">{signedInDisplayName(user)}</h1>
                   <span className="active-learner-badge-ss">ACTIVE LEARNER</span>
                 </div>
 
@@ -663,6 +762,16 @@ export default function ProfilePage({
             <Calendar size={16} />
             <span>Calendar & Schedule</span>
             <span className="ss-tab-pill-badge">{calendarEventsCount}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('certificates')}
+            className={`profile-ss-tab-btn ${activeTab === 'certificates' ? 'active' : ''}`}
+          >
+            <ShieldCheck size={16} />
+            <span>Issued Certificates</span>
+            <span className="ss-tab-pill-badge">{baseCertificates.length}</span>
           </button>
         </div>
 
@@ -1095,6 +1204,227 @@ export default function ProfilePage({
               enrolledCourses={apiEnrolledCourses}
               onEventsCountChange={(count) => setCalendarEventsCount(count)}
             />
+          </div>
+        )}
+
+        {/* ========================================================
+            TAB 4: ISSUED CERTIFICATES
+            ======================================================== */}
+        {activeTab === 'certificates' && (
+          <div className="profile-ss-content-card">
+            <div className="profile-ss-header-row">
+              <div className="profile-ss-title-group">
+                <div className="header-icon-square green">
+                  <Award size={22} />
+                </div>
+                <div className="header-text-block">
+                  <h2 className="header-title-ss">Issued Certificates</h2>
+                  <p className="header-sub-ss">View and download certificates issued for your completed courses</p>
+                </div>
+              </div>
+
+              <div className="profile-ss-toolbar-right">
+                <div className="ss-search-box-wrap">
+                  <Search size={15} className="ss-search-icon-inside" />
+                  <input
+                    type="text"
+                    className="ss-search-input-field"
+                    placeholder="Search certificates..."
+                    value={certificateSearchQuery}
+                    onChange={(e) => setCertificateSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <select
+                  className="ss-certificate-filter"
+                  value={certificateStatusFilter}
+                  onChange={(e) => setCertificateStatusFilter(e.target.value)}
+                  aria-label="Filter certificates by status"
+                >
+                  <option value="all">All Certificates</option>
+                  <option value="active">Active</option>
+                  <option value="revoked">Revoked</option>
+                </select>
+
+                <button
+                  type="button"
+                  className="btn-ss-cert-refresh"
+                  onClick={fetchIssuedCertificates}
+                  disabled={loadingCertificates}
+                >
+                  <RefreshCw size={14} className={loadingCertificates ? 'ss-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {certificatesError && baseCertificates.length > 0 && (
+              <div className="ss-certificate-error" role="alert">
+                <AlertCircle size={16} />
+                <span>{certificatesError}</span>
+              </div>
+            )}
+
+            <div className="ss-certificate-list">
+              {loadingCertificates && displayedCertificates.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#00385E' }}>
+                  <RefreshCw size={24} className="ss-spin" style={{ margin: '0 auto 12px auto', display: 'block' }} />
+                  <p style={{ fontWeight: 600, margin: 0, color: '#64748b', fontSize: '0.92rem' }}>Loading issued certificates...</p>
+                </div>
+              ) : certificatesError && baseCertificates.length === 0 ? (
+                <div className="ss-courses-empty-state" style={{
+                  textAlign: 'center',
+                  padding: '3.5rem 1.5rem',
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  border: '1px dashed #fecaca',
+                  margin: '0'
+                }}>
+                  <div style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    background: '#fef2f2',
+                    color: '#b91c1c',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px auto'
+                  }}>
+                    <AlertCircle size={30} />
+                  </div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#b91c1c', marginBottom: '8px' }}>
+                    {certificatesError}
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: '#64748b', maxWidth: '460px', margin: '0 auto 20px auto', lineHeight: '1.5' }}>
+                    The certificate API returned this error.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={fetchIssuedCertificates}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#00385E',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : displayedCertificates.length === 0 ? (
+                <div className="ss-courses-empty-state" style={{
+                  textAlign: 'center',
+                  padding: '3.5rem 1.5rem',
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  border: '1px dashed #cbd5e1',
+                  margin: '0'
+                }}>
+                  <div style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    background: '#f0fdf4',
+                    color: '#15803d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px auto'
+                  }}>
+                    <Award size={30} />
+                  </div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                    {baseCertificates.length === 0 ? 'No certificates issued yet' : 'No certificates match this filter'}
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: '#64748b', maxWidth: '460px', margin: '0 auto 20px auto', lineHeight: '1.5' }}>
+                    {certificateSearchQuery
+                      ? `No certificates match "${certificateSearchQuery}".`
+                      : baseCertificates.length === 0
+                        ? 'Certificates appear here after a course or program certificate is issued to your account.'
+                        : 'Try another status filter to see the rest of your certificates.'}
+                  </p>
+                  {(certificateSearchQuery || certificateStatusFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCertificateSearchQuery('');
+                        setCertificateStatusFilter('all');
+                      }}
+                      style={{
+                        padding: '9px 18px',
+                        borderRadius: '10px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#0f172a',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                displayedCertificates.map((certificate, index) => {
+                  const title = certificate.courseOrProgramName || 'Issued Certificate';
+                  const credentialId = certificate.credentialId || '—';
+                  const canOpen = !certificate.isRevoked && isSafeCertificateUrl(certificate.certificatePdfUrl);
+                  const key = certificate.credentialId || `${certificate.studentId}-${index}`;
+
+                  return (
+                    <article key={key} className="ss-certificate-card">
+                      <div className="ss-certificate-main">
+                        <div className={`ss-certificate-icon ${certificate.isRevoked ? 'revoked' : ''}`}>
+                          <Award size={20} />
+                        </div>
+                        <div className="ss-certificate-copy">
+                          <div className="ss-certificate-title-row">
+                            <h3 className="ss-certificate-title">{title}</h3>
+                            <span className={`ss-cert-status ${certificate.isRevoked ? 'revoked' : 'active'}`}>
+                              {certificate.isRevoked ? 'Revoked' : 'Active'}
+                            </span>
+                          </div>
+                          <div className="ss-certificate-meta">
+                            <span>Credential ID: {credentialId}</span>
+                            {certificate.createdOn && <span>Issued: {certificate.createdOn}</span>}
+                            {certificate.isRevoked && certificate.revokedOn && <span>Revoked: {certificate.revokedOn}</span>}
+                          </div>
+                          {certificate.isRevoked && certificate.revocationReason && (
+                            <p className="ss-certificate-reason">
+                              Reason: {certificate.revocationReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn-ss-view-certificate"
+                        onClick={() => handleViewCertificate(certificate)}
+                        disabled={!canOpen}
+                      >
+                        <Download size={15} />
+                        <span>{certificate.isRevoked ? 'Unavailable' : 'View Certificate'}</span>
+                      </button>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+            {displayedCertificates.length > 0 && (
+              <div className="ss-footer-pagination">
+                <span className="ss-footer-count-text">
+                  Showing {displayedCertificates.length} of {baseCertificates.length} certificate{baseCertificates.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            )}
           </div>
         )}
 

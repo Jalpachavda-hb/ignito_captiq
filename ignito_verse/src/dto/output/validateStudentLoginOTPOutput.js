@@ -23,33 +23,69 @@ import { formatImageUrl } from './homepageOutputs';
  * @param {number} [status=200] - HTTP status code
  * @returns {object} Clean parsed authentication result object for UI consumption
  */
-export function parseValidateStudentLoginOTPOutput(rawJson = {}, status = 200) {
+function readPayload(rawJson = {}) {
+  const nested = rawJson?.data || rawJson?.Data || rawJson?.result || rawJson?.Result || rawJson?.student || rawJson?.Student || {};
+  return { ...nested, ...rawJson };
+}
+
+function nameFromEmail(email = '') {
+  const local = String(email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
+  if (!local) return '';
+  return local.split(/\s+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function collectNames(source = {}) {
+  const first = source?.firstName || source?.FirstName || '';
+  const last = source?.lastName || source?.LastName || '';
+  const combined = `${first} ${last}`.trim();
+  return [
+    source?.studentName,
+    source?.StudentName,
+    source?.applicantFullName,
+    source?.ApplicantFullName,
+    source?.fullName,
+    source?.FullName,
+    combined
+  ].map(value => String(value || '').trim()).filter(Boolean);
+}
+
+export function parseValidateStudentLoginOTPOutput(rawJson = {}, status = 200, loginIdentity = '') {
   const isOk = status >= 200 && status < 300;
+  const source = readPayload(rawJson);
 
   const isSuccess = Boolean(
-    rawJson?.isSuccess ??
-    rawJson?.IsSuccess ??
-    rawJson?.success ??
-    (isOk && !rawJson?.error)
+    source?.isSuccess ??
+    source?.IsSuccess ??
+    source?.success ??
+    (isOk && !source?.error)
   );
 
-  const message = rawJson?.message || rawJson?.Message || (isSuccess ? 'Login successful.' : 'Invalid OTP or verification failed.');
-  const errorDescription = rawJson?.errorDescription || rawJson?.ErrorDescription || '';
-  const errorNo = Number(rawJson?.errorNo || rawJson?.ErrorNo || 0);
+  const message = source?.message || source?.Message || (isSuccess ? 'Login successful.' : 'Invalid OTP or verification failed.');
+  const errorDescription = source?.errorDescription || source?.ErrorDescription || '';
+  const errorNo = Number(source?.errorNo || source?.ErrorNo || 0);
 
-  const studentId = Number(rawJson?.studentId || rawJson?.StudentId || 0);
-  const studentName = rawJson?.studentName || rawJson?.StudentName || rawJson?.name || rawJson?.Name || '';
-  const email = rawJson?.email || rawJson?.Email || '';
-  const mobileNumber = rawJson?.mobileNumber || rawJson?.MobileNumber || '';
-  const gender = rawJson?.gender || rawJson?.Gender || '';
-  const createdOn = rawJson?.createdOn || rawJson?.CreatedOn || '';
-  const updatedOn = rawJson?.updatedOn || rawJson?.UpdatedOn || '';
-  const accessToken = rawJson?.accessToken || rawJson?.AccessToken || rawJson?.token || rawJson?.Token || '';
+  const studentId = Number(source?.studentId || source?.StudentId || 0);
+  const typedIdentity = String(loginIdentity || '').trim();
+  const typedEmail = typedIdentity.includes('@') ? typedIdentity : '';
+  const email = source?.email || source?.Email || typedEmail || '';
+  const mobileNumber = source?.mobileNumber || source?.MobileNumber || (!typedEmail ? typedIdentity : '') || '';
+  const emailName = nameFromEmail(email);
+  const nested = rawJson?.data || rawJson?.Data || rawJson?.result || rawJson?.Result || rawJson?.student || rawJson?.Student || {};
+  const candidateNames = [...collectNames(source), ...collectNames(nested)];
+  const emailLocal = String(email || '').split('@')[0].trim().toLowerCase();
+  const studentName = candidateNames.find(candidate => {
+    const value = candidate.toLowerCase();
+    return !value.includes('@') && value !== emailLocal;
+  }) || candidateNames.find(candidate => !candidate.includes('@')) || '';
+  const gender = source?.gender || source?.Gender || '';
+  const createdOn = source?.createdOn || source?.CreatedOn || '';
+  const updatedOn = source?.updatedOn || source?.UpdatedOn || '';
+  const accessToken = source?.accessToken || source?.AccessToken || source?.token || source?.Token || '';
 
-  const rawProfileImage = rawJson?.profileImage || rawJson?.ProfileImage || '';
+  const rawProfileImage = source?.profileImage || source?.ProfileImage || '';
   const profileImage = formatImageUrl(rawProfileImage);
 
-  const displayName = studentName || (email ? email.split('@')[0] : (mobileNumber || 'Student User'));
+  const displayName = studentName || emailName || mobileNumber || 'Student';
 
   return {
     success: isSuccess,

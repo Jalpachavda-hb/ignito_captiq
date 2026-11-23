@@ -6,6 +6,7 @@ import {
   LogOut, Calendar 
 } from 'lucide-react';
 import logoImg from '../../assets/newlg.png';
+import { signedInDisplayName } from '../../services/authService';
 import './navbar.css';
 
 const navItems = [
@@ -227,14 +228,14 @@ export default function Navbar({
                     alt={user?.name || user?.studentName || user?.fullName || 'User'} 
                     className="navbar-user-avatar" 
                   />
-                  <span className="navbar-user-name">{(user?.name || user?.studentName || user?.fullName || (user?.email ? user.email.split('@')[0] : 'User')).split(' ')[0]}</span>
+                  <span className="navbar-user-name">{signedInDisplayName(user, { firstNameOnly: true })}</span>
                   <ChevronDown size={15} className={`profile-chevron ${profileDropdownOpen ? 'open' : ''}`} />
                 </button>
 
                 {profileDropdownOpen && (
                   <div className="profile-dropdown-menu">
                     <div className="dropdown-user-header">
-                      <p className="dropdown-name">{user?.name || user?.studentName || user?.fullName || (user?.email ? user.email.split('@')[0] : 'User')}</p>
+                      <p className="dropdown-name">{signedInDisplayName(user)}</p>
                       <span className="dropdown-email">{user?.email || ''}</span>
                     </div>
 

@@ -15,7 +15,7 @@ import FAQPage from './component/FAQ/FAQPage';
 import VideoModal from './component/modals/VideoModal';
 import AuthRequiredModal from './component/modals/AuthRequiredModal';
 import { microcredentialsData } from './data/microcredentials';
-import { getSavedUserSession, logoutUser } from './services/authService';
+import { getSavedUserSession, logoutUser, normalizeSignedInUser } from './services/authService';
 import { getLoggedInStudentId } from './services/microcredentialService';
 import Chatbot from './component/Chatbot/Chatbot';
 import { initGlobalModalWatcher } from './utils/modalWatcher';
@@ -289,7 +289,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = (userData) => {
-    setUser(userData);
+    setUser(normalizeSignedInUser(userData));
     if (pendingRedirect) {
       const target = pendingRedirect;
       setPendingRedirect(null);
@@ -346,6 +346,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const signedInUser = normalizeSignedInUser(user);
+
   const handleSelectCategoryFromHome = (cat) => {
     setCatalogCategory(cat);
     handleNavigate('microcredentials');
@@ -374,7 +376,7 @@ export default function App() {
       {activePage !== 'login' && (
         <Navbar 
           activePage={activePage === 'detail' || activePage === 'watch' || activePage === 'quiz' ? 'microcredentials' : activePage}
-          user={user}
+          user={signedInUser}
           onNavigate={handleNavigate}
           onLogin={() => handleNavigate('login')}
           onLogout={handleLogout}
@@ -431,7 +433,7 @@ export default function App() {
 
         {activePage === 'profile' && (
           <ProfilePage 
-            user={user}
+            user={signedInUser}
             initialTab={profileTab}
             onExploreCatalog={() => handleNavigate('microcredentials')}
             onViewCourse={handleWatchCourse}
@@ -499,7 +501,7 @@ export default function App() {
 
       {/* Ignito Captio Assistant (Captiq AI) Floating Chatbot */}
       {activePage !== 'login' && (
-        <Chatbot onNavigate={handleNavigate} user={user} />
+        <Chatbot onNavigate={handleNavigate} user={signedInUser} />
       )}
     </div>
   );

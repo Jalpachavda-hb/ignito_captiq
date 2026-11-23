@@ -30,10 +30,11 @@ export function parseSendStudentLoginOTPOutput(rawJson = {}, status = 200) {
   const errorDescription = rawJson?.errorDescription || rawJson?.ErrorDescription || '';
   const errorNo = Number(rawJson?.errorNo || rawJson?.ErrorNo || 0);
 
-  const studentId = Number(rawJson?.studentId || rawJson?.StudentId || 0);
-  const otpId = Number(rawJson?.otpId || rawJson?.OtpId || 0);
-  const email = rawJson?.email || rawJson?.Email || '';
-  const mobileNumber = rawJson?.mobileNumber || rawJson?.MobileNumber || '';
+  const source = rawJson?.data || rawJson?.Data || rawJson?.result || rawJson?.Result || rawJson || {};
+  const studentId = Number(source?.studentId || source?.StudentId || rawJson?.studentId || rawJson?.StudentId || 0);
+  const otpId = Number(source?.otpId || source?.OtpId || rawJson?.otpId || rawJson?.OtpId || 0);
+  const email = source?.email || source?.Email || rawJson?.email || rawJson?.Email || '';
+  const mobileNumber = source?.mobileNumber || source?.MobileNumber || rawJson?.mobileNumber || rawJson?.MobileNumber || '';
 
   return {
     success: isSuccess,
