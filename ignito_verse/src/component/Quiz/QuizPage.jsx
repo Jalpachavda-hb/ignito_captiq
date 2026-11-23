@@ -146,34 +146,51 @@ export default function QuizPage({
     setViewMode('loading');
     setError(null);
 
+    const wantsResult = Boolean(currentCourse?.showQuizResult);
+
     try {
       const studentId = resolveStudentId();
       
       // Step 1: Check Attempt Status (with moduleMasterId)
       const statusRes = await checkStudentQuizAttemptStatus(courseId, studentId, 2, moduleMasterId);
+      const quizId = Number(statusRes?.quizId || initialQuizId || 0);
 
-      if (statusRes && statusRes.isSuccess) {
-        const quizId = Number(statusRes.quizId || 0);
-        if (quizId > 0) {
-          setActiveQuizId(quizId);
-          setQuizMetadata(prev => ({ ...prev, quizId }));
-          try {
-            sessionStorage.setItem('MicrocredentialQuizId', String(quizId));
-          } catch (_) {}
-        }
-
-        // Branching Condition:
-        if (statusRes.isAttemptedFlag === 1) {
-          // STEP 2A: Already Attempted -> Fetch Attempt List
-          await loadAttemptList(quizId || initialQuizId, studentId);
-        } else {
-          // STEP 2B: Not Attempted -> Load Quiz Preview Data & Resume/Start
-          await startQuizExecution(courseId, studentId, moduleMasterId);
-        }
-      } else {
-        // Fallback directly to loading quiz preview
-        await startQuizExecution(courseId, studentId, moduleMasterId);
+      if (quizId > 0) {
+        setActiveQuizId(quizId);
+        setQuizMetadata(prev => ({ ...prev, quizId }));
+        try {
+          sessionStorage.setItem('MicrocredentialQuizId', String(quizId));
+        } catch (_) {}
       }
+
+      const alreadyAttempted = wantsResult
+        || Number(statusRes?.isAttemptedFlag) === 1
+        || Number(statusRes?.usedAttempts) > 0;
+
+      if (statusRes && statusRes.isSuccess && alreadyAttempted) {
+        const list = await loadAttemptList(quizId || initialQuizId, studentId);
+        if (wantsResult && Array.isArray(list) && list.length > 0) {
+          const latest = [...list].sort((a, b) => {
+            const numA = Number(a.attemptNumber || a.microcredentialQuizAttemptNumber || 0);
+            const numB = Number(b.attemptNumber || b.microcredentialQuizAttemptNumber || 0);
+            if (numA !== numB) return numB - numA;
+            return (Number(b.attemptId) || 0) - (Number(a.attemptId) || 0);
+          })[0];
+          await handleViewAttemptResult({
+            ...latest,
+            quizId: latest.quizId || quizId || initialQuizId
+          });
+        }
+        return;
+      }
+
+      if (wantsResult) {
+        setAttemptList([]);
+        setViewMode('attemptList');
+        return;
+      }
+
+      await startQuizExecution(courseId, studentId, moduleMasterId);
     } catch (err) {
       console.error('Error in initializeQuizFlow:', err);
       setError('Failed to initialize quiz assessment. Please try again.');
@@ -200,13 +217,15 @@ export default function QuizPage({
           setIsQuizFinalized(true);
         }
         setViewMode('attemptList');
-      } else {
-        setAttemptList([]);
-        setViewMode('attemptList');
+        return list;
       }
+      setAttemptList([]);
+      setViewMode('attemptList');
+      return [];
     } catch (err) {
       console.error('Error in loadAttemptList:', err);
       setViewMode('attemptList');
+      return [];
     }
   };
 

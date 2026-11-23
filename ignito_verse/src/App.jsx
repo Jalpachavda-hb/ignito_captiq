@@ -172,7 +172,6 @@ export default function App() {
   // Modals state
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authCourseTitle, setAuthCourseTitle] = useState('');
-  const [pendingWatchCourse, setPendingWatchCourse] = useState(null);
   const [pendingRedirect, setPendingRedirect] = useState(null);
   const [videoModal, setVideoModal] = useState({
     isOpen: false,
@@ -219,15 +218,6 @@ export default function App() {
         if (param) {
           const resolved = resolveSelectedCourse(param);
           setSelectedCourse(resolved);
-        }
-        if (page === 'watch') {
-          const currentUser = user || getSavedUserSession();
-          const currentStudentId = getLoggedInStudentId();
-          if (!currentUser && (!currentStudentId || currentStudentId <= 0)) {
-            setActivePage('detail');
-            setAuthCourseTitle(selectedCourse?.title || selectedCourse?.microcredentialCourseName || '');
-            setIsAuthModalOpen(true);
-          }
         }
       }
     };
@@ -300,15 +290,7 @@ export default function App() {
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
-    if (pendingWatchCourse) {
-      const courseObj = pendingWatchCourse;
-      setPendingWatchCourse(null);
-      const courseId = courseObj?.microcredentialCourseId || courseObj?.encryptedMicrocredentialCourseId || courseObj?.id || '';
-      const cleanCourseId = String(courseId).trim().replace(/^\/+|\/+$/g, '');
-      window.history.pushState({}, '', cleanCourseId ? `/watch/${cleanCourseId}` : '/microcredentials');
-      setActivePage('watch');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (pendingRedirect) {
+    if (pendingRedirect) {
       const target = pendingRedirect;
       setPendingRedirect(null);
       if (target.page === 'profile') {
@@ -356,16 +338,6 @@ export default function App() {
     try {
       sessionStorage.setItem('ignito_selected_course', JSON.stringify(courseObj));
     } catch (e) {}
-
-    // Check if user/student is logged in
-    const currentUser = user || getSavedUserSession();
-    const currentStudentId = getLoggedInStudentId();
-    if (!currentUser && (!currentStudentId || currentStudentId <= 0)) {
-      setAuthCourseTitle(courseObj?.title || courseObj?.microcredentialCourseName || '');
-      setPendingWatchCourse(courseObj);
-      setIsAuthModalOpen(true);
-      return;
-    }
 
     const courseId = courseObj?.microcredentialCourseId || courseObj?.encryptedMicrocredentialCourseId || courseObj?.id || '';
     const cleanCourseId = String(courseId).trim().replace(/^\/+|\/+$/g, '');

@@ -61,6 +61,7 @@ import {
   getManyMicroCourseDiscussionQuestionReply,
   microcredentialQuizStudentAttemptDetail,
   getMicrocredentialCourseDetail,
+  getMicrocredentialCourseBindDataList,
   getMicrocredentialModuleByCourseId,
   addUpdateMicrocredentialVideoNote,
   getMicrocredentialVideoNotes,
@@ -108,19 +109,39 @@ export default function MicrocredentialWatchPage({
   useEffect(() => {
     const rawId = course?.microcredentialCourseId || course?.courseId || course?.id;
     const courseId = Number(rawId) || 0;
-    if (courseId > 0 && !course?.microcredentialCourseName && !course?.title) {
-      getMicrocredentialCourseDetail(courseId)
-        .then(res => {
-          if (res && res.microcredentialCourseName) {
-            setCourseDetails(res);
-            try {
-              const prev = JSON.parse(sessionStorage.getItem('ignito_selected_course') || '{}');
-              sessionStorage.setItem('ignito_selected_course', JSON.stringify({ ...prev, ...res }));
-            } catch (e) {}
-          }
-        })
-        .catch(() => { });
-    }
+    if (!(courseId > 0 && !course?.microcredentialCourseName && !course?.title)) return;
+
+    let cancelled = false;
+    const rememberCourse = (res) => {
+      if (cancelled || !res?.microcredentialCourseName) return;
+      setCourseDetails(res);
+      try {
+        const prev = JSON.parse(sessionStorage.getItem('ignito_selected_course') || '{}');
+        sessionStorage.setItem('ignito_selected_course', JSON.stringify({ ...prev, ...res }));
+      } catch (e) {}
+    };
+
+    (async () => {
+      try {
+        const res = await getMicrocredentialCourseDetail(courseId);
+        if (res?.microcredentialCourseName) {
+          rememberCourse(res);
+          return;
+        }
+      } catch (e) {}
+
+      // Course detail is login-protected. Guests still get the public catalog name.
+      try {
+        const listRes = await getMicrocredentialCourseBindDataList(1, 50, 'UpdatedOn', 'DESC', 0, '', 0, false, '', 0);
+        const rows = listRes?.microcredentialCourseBindDatas || [];
+        const match = rows.find(item => Number(item.microcredentialCourseId) === courseId);
+        rememberCourse(match);
+      } catch (e) {}
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [course]);
 
   const currentCourse = {
@@ -168,6 +189,7 @@ export default function MicrocredentialWatchPage({
   const [overallWatchPct, setOverallWatchPct] = useState(0);
   const [videoProgressMap, setVideoProgressMap] = useState({});
   const [isQuizEligible, setIsQuizEligible] = useState(false);
+  const [isQuizResult, setIsQuizResult] = useState(false);
   const [quizStatusMessage, setQuizStatusMessage] = useState('');
 
   // Quiz Attempt Details Modal state (POST /api/StudentMicrocredentialQuizAPI/MicrocredentialQuizStudentAttemptDetail)
@@ -727,6 +749,12 @@ export default function MicrocredentialWatchPage({
       const res = await getMicrocredentialStudentWatchVideoData(studentId, courseId, moduleMasterId);
       if (res && res.success) {
         setIsQuizEligible(Boolean(res.isQuizOpen));
+        setIsQuizResult(Boolean(res.isResult));
+        if (Number(res.quizId) > 0) {
+          try {
+            sessionStorage.setItem('MicrocredentialQuizId', String(res.quizId));
+          } catch (e) {}
+        }
         if (res.statusMessage) {
           setQuizStatusMessage(res.statusMessage);
         }
@@ -902,6 +930,14 @@ export default function MicrocredentialWatchPage({
   };
 
   const handleStartQuiz = (detail) => {
+    openQuizPage(detail, false);
+  };
+
+  const handleShowQuizResult = (detail) => {
+    openQuizPage(detail, true);
+  };
+
+  const openQuizPage = (detail, showQuizResult) => {
     setShowQuizModal(false);
     if (onNavigate) {
       const curLecture = activeLectureRef.current || activeLecture;
@@ -943,7 +979,8 @@ export default function MicrocredentialWatchPage({
         microcredentialQuizId: targetQuizId || currentCourse?.microcredentialQuizId,
         microcredentialModuleMasterId: targetModuleId || currentCourse?.microcredentialModuleMasterId,
         selectedModuleMasterId: targetModuleId || currentCourse?.selectedModuleMasterId,
-        moduleMasterId: targetModuleId || currentCourse?.moduleMasterId
+        moduleMasterId: targetModuleId || currentCourse?.moduleMasterId,
+        showQuizResult: Boolean(showQuizResult)
       });
     }
   };
@@ -3157,10 +3194,10 @@ export default function MicrocredentialWatchPage({
                       boxShadow: '0 4px 14px rgba(0,56,94,0.22)',
                       transition: 'all 0.2s ease'
                     }}
-                    onClick={handleOpenQuizModal}
+                    onClick={isQuizResult ? () => handleShowQuizResult(quizAttemptData?.studentAttemptDetail || {}) : handleOpenQuizModal}
                   >
                     <HelpCircle size={15} />
-                    <span>Start Assessment Quiz</span>
+                    <span>{isQuizResult ? 'Show Quiz Result' : 'Start Assessment Quiz'}</span>
                   </button>
                 </div>
               )}
@@ -3242,6 +3279,7 @@ export default function MicrocredentialWatchPage({
           isOpen={showQuizModal}
           onClose={() => setShowQuizModal(false)}
           onStartQuiz={handleStartQuiz}
+          onShowQuizResult={handleShowQuizResult}
           loading={quizAttemptLoading}
           error={quizAttemptError}
           courseTitle={currentCourse.title || currentCourse.microcredentialCourseName || 'Microcredential Course'}

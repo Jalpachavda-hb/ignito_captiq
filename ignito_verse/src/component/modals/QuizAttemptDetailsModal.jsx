@@ -17,6 +17,7 @@ export default function QuizAttemptDetailsModal({
   isOpen,
   onClose,
   onStartQuiz = () => {},
+  onShowQuizResult = () => {},
   loading = false,
   error = '',
   courseTitle = 'Testing',
@@ -50,10 +51,22 @@ export default function QuizAttemptDetailsModal({
   };
 
   const historyList = attemptData?.microcredentialQuizStudentAttemptDetail || [];
+  const parsedAttemptNumbers = historyList.map((item) => {
+    const raw = Number(
+      item?.microcredentialQuizAttemptNumber ??
+      item?.attemptNumber ??
+      item?.attemptNo ??
+      0
+    );
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  });
+  const distinctAttemptNumbers = new Set(parsedAttemptNumbers.filter((num) => num > 0));
+  const attemptNumbersAreDistinct = historyList.length > 0 && distinctAttemptNumbers.size === historyList.length;
   const totalAttempts = Number(detail.quizTotalAttempts ?? 10);
   const usedAttempts = Number(detail.usedAttempts ?? 0);
   const remaining = Number(detail.remainingAttempts ?? Math.max(0, totalAttempts - usedAttempts));
   const isAttemptsExhausted = Boolean(detail.isAllAttemptDone || remaining <= 0);
+  const hasRecordedAttempts = historyList.length > 0 || usedAttempts > 0 || Boolean(detail.isAllAttemptDone);
 
   const availabilityText = detail.quizAvailability || 'to';
   const timeLimitText = detail.quizTimeLimit || '02:00:00';
@@ -260,7 +273,7 @@ export default function QuizAttemptDetailsModal({
                       </thead>
                       <tbody>
                         {historyList.map((item, idx) => {
-                          const attemptNum = item.microcredentialQuizAttemptNumber || item.attemptNumber || (idx + 1);
+                          const attemptNum = attemptNumbersAreDistinct ? parsedAttemptNumbers[idx] : (idx + 1);
                           const compTime = item.quizCompletionTime || item.completionTime || 'Recorded';
                           const scoreMsg = item.scoreMessage || item.score || 'Completed';
                           const isPass = scoreMsg.toLowerCase().includes('pass');
@@ -305,7 +318,11 @@ export default function QuizAttemptDetailsModal({
               {/* Bottom Info Banner */}
               <div className="quiz-info-callout">
                 <Info size={20} className="info-callout-icon" />
-                <span>Ready to start? Once you begin, the timer of {timeLimitText} will start.</span>
+                <span>
+                  {hasRecordedAttempts
+                    ? 'You have already completed this quiz assessment. Click "Show Quiz Result" to review your scores and question summary.'
+                    : `Ready to start? Once you begin, the timer of ${timeLimitText} will start.`}
+                </span>
               </div>
             </>
           )}
@@ -325,13 +342,26 @@ export default function QuizAttemptDetailsModal({
           <button
             type="button"
             className="btn-action-start-quiz"
-            disabled={loading || isAttemptsExhausted}
+            disabled={loading || (!hasRecordedAttempts && isAttemptsExhausted)}
             onClick={() => {
+              if (hasRecordedAttempts) {
+                if (onShowQuizResult) onShowQuizResult(detail);
+                return;
+              }
               if (onStartQuiz) onStartQuiz(detail);
             }}
           >
-            <Play size={15} fill="#ffffff" />
-            <span>Start Quiz</span>
+            {hasRecordedAttempts ? (
+              <>
+                <FileText size={15} />
+                <span>Show Quiz Result</span>
+              </>
+            ) : (
+              <>
+                <Play size={15} fill="#ffffff" />
+                <span>Start Quiz</span>
+              </>
+            )}
           </button>
         </div>
 
